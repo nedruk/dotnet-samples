@@ -3,6 +3,9 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
+  "features": {
+    "ghcr.io/devcontainers/features/copilot-cli": {}
+  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -11,7 +14,8 @@
         "ms-dotnettools.vscode-dotnet-runtime"
       ],
       "settings": {
-        "terminal.integrated.defaultProfile.linux": "bash"
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.fontFamily": "MesloLGS NF, Menlo, Monaco, 'Courier New', monospace"
       }
     }
   },
