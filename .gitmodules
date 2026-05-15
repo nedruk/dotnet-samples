@@ -1,0 +1,3 @@
+[submodule "docs/aauth-spec"]
+	path = docs/aauth-spec
+	url = https://github.com/DickHardt/AAuth.git
