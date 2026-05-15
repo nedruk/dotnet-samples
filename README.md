@@ -128,3 +128,16 @@ Included VS Code extensions:
 - **C# Dev Kit** (`ms-dotnettools.csdevkit`)
 - **C#** (`ms-dotnettools.csharp`)
 - **.NET Runtime Install Tool** (`ms-dotnettools.vscode-dotnet-runtime`)
+
+### Cross-referencing the TypeScript AAuth Samples
+
+If you're also working on the [TypeScript AAuth samples](https://github.com/nedruk/aauth-samples), you can mount that folder into the dev container for cross-reference. Set the `AAUTH_TS_SAMPLES` environment variable on your **host machine** to the local path of the TS samples repo:
+
+```bash
+# Add to your shell profile (~/.zshrc, ~/.bashrc, etc.)
+export AAUTH_TS_SAMPLES="/path/to/your/aauth-samples"
+```
+
+The folder will be available inside the container at `/workspaces/aauth-samples`.
+
+If the variable is not set, an empty placeholder directory is mounted instead — the dev container works normally either way.

@@ -120,6 +120,8 @@ When writing new tests, follow the existing pattern: create a private inner mock
 
 This .NET repo ports functionality from the TypeScript monorepo at [`aauth-dev/packages-js`](https://github.com/AAuth-dev/packages-js).
 
+If the `AAUTH_TS_SAMPLES` environment variable is set on the host, the TypeScript AAuth samples repo is bind-mounted into the dev container at `/workspaces/aauth-samples`. Use this for cross-referencing the TS implementation when porting or comparing behavior.
+
 | TypeScript Package | .NET Package | Notes |
 |---|---|---|
 | `@aauth/mcp-agent` | `AAuth.Agent` | Agent-side signing, challenge-response, token exchange |
