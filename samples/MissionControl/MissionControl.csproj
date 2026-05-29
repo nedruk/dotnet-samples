@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AAuth.Core\AAuth.Core.csproj" />
+    <ProjectReference Include="..\..\src\AAuth.Agent\AAuth.Agent.csproj" />
+    <ProjectReference Include="..\..\src\AAuth.Server\AAuth.Server.csproj" />
+  </ItemGroup>
+
+</Project>

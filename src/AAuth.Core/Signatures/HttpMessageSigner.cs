@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Crypto.Signers;
 
 namespace AAuth.Core.Signatures;
 
@@ -18,6 +20,14 @@ public sealed record SignatureVerificationResult(
 /// </summary>
 public static class HttpMessageSigner
 {
+    private static readonly string[] RequiredCoveredComponents =
+    [
+        "@method",
+        "@authority",
+        "@path",
+        "signature-key"
+    ];
+
     /// <summary>
     /// Sign an outgoing HTTP request. Adds Signature, Signature-Input, and Signature-Key headers.
     /// </summary>
@@ -136,6 +146,19 @@ public static class HttpMessageSigner
             return new SignatureVerificationResult(false, null, null, $"Invalid Signature-Input: {ex.Message}");
         }
 
+        var missingRequiredComponents = RequiredCoveredComponents
+            .Where(required => !sigInput.CoveredComponents.Contains(required, StringComparer.Ordinal))
+            .ToList();
+
+        if (missingRequiredComponents.Count > 0)
+        {
+            return new SignatureVerificationResult(
+                false,
+                null,
+                parsedSignatureKey,
+                $"Signature-Input missing required components: {string.Join(", ", missingRequiredComponents)}");
+        }
+
         // Verify created timestamp is within window (60 seconds)
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (Math.Abs(now - sigInput.Created) > 60)
@@ -203,28 +226,90 @@ public static class HttpMessageSigner
         return key switch
         {
             ECDsa ecdsa => ecdsa.SignData(data, HashAlgorithmName.SHA256),
-            _ => throw new NotSupportedException($"Unsupported key type: {key.GetType()}. Currently only ECDSA P-256 is supported.")
+            Ed25519PrivateKey ed25519 => SignEd25519Data(ed25519, data),
+            _ => throw new NotSupportedException(
+                $"Unsupported signing key type: {key.GetType()}. Supported signing key types are ECDsa (ES256) and Ed25519PrivateKey (EdDSA).")
         };
     }
 
     private static bool VerifyData(JsonWebKey jwk, byte[] data, byte[] signature)
     {
-        if (jwk.Kty == "EC" && jwk.Crv == "P-256")
+        if (string.Equals(jwk.Kty, "EC", StringComparison.Ordinal))
         {
-            using var ecdsa = ECDsa.Create(new ECParameters
-            {
-                Curve = ECCurve.NamedCurves.nistP256,
-                Q = new ECPoint
-                {
-                    X = Base64UrlEncoder.DecodeBytes(jwk.X),
-                    Y = Base64UrlEncoder.DecodeBytes(jwk.Y)
-                }
-            });
-            return ecdsa.VerifyData(data, signature, HashAlgorithmName.SHA256);
+            return VerifyEcData(jwk, data, signature);
         }
-        else
+
+        if (string.Equals(jwk.Kty, "OKP", StringComparison.Ordinal))
         {
-            throw new NotSupportedException($"Unsupported key type: {jwk.Kty}/{jwk.Crv}. Currently only EC/P-256 is supported.");
+            return VerifyEd25519Data(jwk, data, signature);
+        }
+
+        throw new NotSupportedException($"Unsupported JWK key type: {jwk.Kty}. Supported key types are EC/P-256 and OKP/Ed25519.");
+    }
+
+    private static byte[] SignEd25519Data(Ed25519PrivateKey key, byte[] data)
+    {
+        var signer = new Ed25519Signer();
+        signer.Init(true, key.ToPrivateKeyParameters());
+        signer.BlockUpdate(data, 0, data.Length);
+        return signer.GenerateSignature();
+    }
+
+    private static bool VerifyEcData(JsonWebKey jwk, byte[] data, byte[] signature)
+    {
+        if (!string.Equals(jwk.Crv, "P-256", StringComparison.Ordinal))
+            throw new NotSupportedException($"Unsupported EC curve: {jwk.Crv}. Expected P-256 for ES256.");
+
+        if (!string.IsNullOrEmpty(jwk.Alg) && !string.Equals(jwk.Alg, "ES256", StringComparison.Ordinal))
+            throw new NotSupportedException($"Unsupported JWK alg for EC key: {jwk.Alg}. Expected ES256.");
+
+        if (string.IsNullOrEmpty(jwk.X) || string.IsNullOrEmpty(jwk.Y))
+            throw new FormatException("EC JWK must include non-empty 'x' and 'y' coordinates.");
+
+        var x = DecodeBase64Url(jwk.X, "x");
+        var y = DecodeBase64Url(jwk.Y, "y");
+        if (x.Length != 32 || y.Length != 32)
+            throw new FormatException("EC P-256 JWK coordinates must be 32 bytes each.");
+
+        using var ecdsa = ECDsa.Create(new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP256,
+            Q = new ECPoint { X = x, Y = y }
+        });
+
+        return ecdsa.VerifyData(data, signature, HashAlgorithmName.SHA256);
+    }
+
+    private static bool VerifyEd25519Data(JsonWebKey jwk, byte[] data, byte[] signature)
+    {
+        if (!string.Equals(jwk.Crv, "Ed25519", StringComparison.Ordinal))
+            throw new NotSupportedException($"Unsupported OKP curve: {jwk.Crv}. Expected Ed25519.");
+
+        if (!string.IsNullOrEmpty(jwk.Alg) && !string.Equals(jwk.Alg, "EdDSA", StringComparison.Ordinal))
+            throw new NotSupportedException($"Unsupported JWK alg for Ed25519 key: {jwk.Alg}. Expected EdDSA.");
+
+        if (string.IsNullOrEmpty(jwk.X))
+            throw new FormatException("Ed25519 JWK must include non-empty 'x' public key.");
+
+        var publicKeyBytes = DecodeBase64Url(jwk.X, "x");
+        if (publicKeyBytes.Length != Ed25519PublicKeyParameters.KeySize)
+            throw new FormatException($"Ed25519 JWK 'x' must decode to {Ed25519PublicKeyParameters.KeySize} bytes.");
+
+        var verifier = new Ed25519Signer();
+        verifier.Init(false, new Ed25519PublicKeyParameters(publicKeyBytes, 0));
+        verifier.BlockUpdate(data, 0, data.Length);
+        return verifier.VerifySignature(signature);
+    }
+
+    private static byte[] DecodeBase64Url(string value, string parameterName)
+    {
+        try
+        {
+            return Base64UrlEncoder.DecodeBytes(value);
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        {
+            throw new FormatException($"Invalid base64url value for '{parameterName}'.", ex);
         }
     }
 

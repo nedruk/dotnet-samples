@@ -25,6 +25,12 @@ public sealed class DeferredOptions
     public Func<string, Task<string>>? OnClarification { get; init; }
     public int MaxPollDurationSeconds { get; init; } = 300;
     public int PreferWaitSeconds { get; init; } = 45;
+
+    /// <summary>
+    /// The origin URL of the server that issued the deferred response.
+    /// Used to verify same-origin Location URLs per spec.
+    /// </summary>
+    public string? OriginalRequestOrigin { get; init; }
 }
 
 /// <summary>
@@ -42,6 +48,20 @@ public static class DeferredResponseLoop
         DeferredOptions options,
         CancellationToken cancellationToken = default)
     {
+        // Verify same-origin: Location URL MUST be on the same origin as the responding server
+        var locationUri = new Uri(locationUrl);
+        if (options.OriginalRequestOrigin is not null)
+        {
+            var originalOrigin = new Uri(options.OriginalRequestOrigin);
+            if (!string.Equals(locationUri.GetLeftPart(UriPartial.Authority),
+                originalOrigin.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Location URL origin '{locationUri.GetLeftPart(UriPartial.Authority)}' does not match " +
+                    $"server origin '{originalOrigin.GetLeftPart(UriPartial.Authority)}'");
+            }
+        }
+
         var deadline = DateTimeOffset.UtcNow.AddSeconds(options.MaxPollDurationSeconds);
         var backoffMs = 1000;
 
@@ -138,6 +158,24 @@ public static class DeferredResponseLoop
                 var waitMs = GetRetryDelay(response, backoffMs);
                 await Task.Delay(waitMs, cancellationToken);
                 continue;
+            }
+
+            if (status == HttpStatusCode.PaymentRequired) // 402
+            {
+                // Spec: 402 means payment required — settle payment and poll Location
+                // The 402 response includes a Location header for polling after payment
+                var paymentLocation = response.Headers.Location?.ToString();
+                if (paymentLocation is not null)
+                {
+                    if (!Uri.IsWellFormedUriString(paymentLocation, UriKind.Absolute))
+                        paymentLocation = new Uri(new Uri(locationUrl), paymentLocation).ToString();
+                    locationUrl = paymentLocation;
+                    var waitMs = GetRetryDelay(response, backoffMs);
+                    await Task.Delay(waitMs, cancellationToken);
+                    continue;
+                }
+                // No Location header — treat as terminal
+                return new DeferredResult(response, await ParseErrorBodyAsync(response));
             }
 
             // Unexpected status — treat as terminal

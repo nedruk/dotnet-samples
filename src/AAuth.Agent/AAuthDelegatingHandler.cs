@@ -3,8 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AAuth.Core.Discovery;
 using AAuth.Core.Headers;
+using AAuth.Core.Identifiers;
 using AAuth.Core.Signatures;
 using AAuth.Core.Tokens;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 
 namespace AAuth.Agent;
 
@@ -14,6 +17,8 @@ namespace AAuth.Agent;
 /// </summary>
 public sealed class AAuthDelegatingHandler : DelegatingHandler
 {
+    private static readonly TimeSpan ResourceTokenClockSkew = TimeSpan.FromMinutes(5);
+
     private readonly AAuthAgentOptions _options;
     private readonly IssuerKeyResolver _keyResolver;
     private readonly TokenCache _tokenCache = new();
@@ -122,12 +127,23 @@ public sealed class AAuthDelegatingHandler : DelegatingHandler
         HttpRequestMessage originalRequest, string resourceOrigin,
         string resourceToken, CancellationToken ct)
     {
+        var validatedResourceToken = await ValidateResourceTokenAsync(resourceToken, resourceOrigin, ct);
+
         // Determine PS URL: from options or from agent token's ps claim
         var authServerUrl = _options.AuthServerUrl;
         if (authServerUrl is null)
         {
-            var decodedResourceToken = ResourceToken.Decode(resourceToken);
-            authServerUrl = decodedResourceToken.Audience;
+            authServerUrl = validatedResourceToken.Audience;
+        }
+        else
+        {
+            ServerIdentifier.Validate(authServerUrl);
+            if (!string.Equals(authServerUrl, validatedResourceToken.Audience, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new AAuthTokenException(
+                    "invalid_resource_token",
+                    $"Configured auth server {authServerUrl} does not match token audience {validatedResourceToken.Audience}");
+            }
         }
 
         // Discover PS metadata
@@ -207,12 +223,120 @@ public sealed class AAuthDelegatingHandler : DelegatingHandler
             return tokenResponse;
         }
 
-        // Cache the auth token
+        // Cache the auth token (after verifying claims per spec)
+        await VerifyReceivedAuthTokenAsync(authToken, resourceOrigin);
         _tokenCache.CacheAuthToken(resourceOrigin, authServerUrl, authToken, expiresIn);
 
         // Retry the original request with the auth token
         var retryRequest = await CloneRequest(originalRequest);
         return await SendSignedWithAuthToken(retryRequest, authToken, ct);
+    }
+
+    /// <summary>
+    /// Verify received auth token claims per spec: aud, cnf.jwk, agent, act.sub must match agent's own values.
+    /// </summary>
+    private async Task VerifyReceivedAuthTokenAsync(string rawAuthToken, string expectedResourceOrigin)
+    {
+        var authToken = AuthToken.Decode(rawAuthToken);
+        var km = await _options.GetKeyMaterial();
+
+        // Extract agent identifier from the agent token in the signature key
+        if (km.SignatureKey is not SignatureKeyValue.Jwt jwtKey)
+            throw new InvalidOperationException("Cannot verify auth token without JWT-based signature key");
+        var agentToken = AgentToken.Decode(jwtKey.Token);
+
+        // Verify aud matches the resource the agent intends to access
+        var normalizedOrigin = expectedResourceOrigin.TrimEnd('/');
+        if (!string.Equals(authToken.Audience, normalizedOrigin, StringComparison.OrdinalIgnoreCase))
+            throw new AAuthTokenException("invalid_auth_token",
+                $"Auth token aud '{authToken.Audience}' does not match target resource '{normalizedOrigin}'");
+
+        // Verify cnf.jwk matches the agent's own signing key
+        var agentThumbprint = JsonWebKeyThumbprint.Compute(agentToken.ConfirmationKey);
+        var authTokenThumbprint = JsonWebKeyThumbprint.Compute(authToken.ConfirmationKey);
+        if (agentThumbprint != authTokenThumbprint)
+            throw new AAuthTokenException("invalid_auth_token",
+                "Auth token cnf.jwk does not match agent's signing key");
+
+        // Verify agent matches the agent's own identifier
+        if (!string.Equals(authToken.Agent, agentToken.Subject, StringComparison.Ordinal))
+            throw new AAuthTokenException("invalid_auth_token",
+                $"Auth token agent '{authToken.Agent}' does not match agent identifier '{agentToken.Subject}'");
+
+        // Verify act.sub matches the agent's own identifier
+        if (authToken.Actor is null || !string.Equals(authToken.Actor.Subject, agentToken.Subject, StringComparison.Ordinal))
+            throw new AAuthTokenException("invalid_auth_token",
+                "Auth token act.sub does not match agent identifier");
+    }
+
+    private async Task<ResourceToken> ValidateResourceTokenAsync(
+        string rawResourceToken, string expectedIssuer, CancellationToken ct)
+    {
+        var decoded = ResourceToken.Decode(rawResourceToken);
+
+        try
+        {
+            ServerIdentifier.Validate(decoded.Issuer);
+            ServerIdentifier.Validate(decoded.Audience);
+        }
+        catch (FormatException ex)
+        {
+            throw new AAuthTokenException("invalid_resource_token", ex.Message);
+        }
+
+        if (!AAuthIdentifier.TryParse(decoded.Agent, out _))
+            throw new AAuthTokenException("invalid_resource_token", $"Invalid agent identifier: {decoded.Agent}");
+
+        var normalizedExpectedIssuer = expectedIssuer.TrimEnd('/');
+        if (!string.Equals(decoded.Issuer, normalizedExpectedIssuer, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new AAuthTokenException(
+                "invalid_resource_token",
+                $"Resource token issuer {decoded.Issuer} does not match resource {normalizedExpectedIssuer}");
+        }
+
+        JsonWebKeySet keys;
+        try
+        {
+            keys = await _keyResolver.ResolveKeysAsync(decoded.Issuer, decoded.Dwk, ct);
+        }
+        catch (Exception ex)
+        {
+            throw new AAuthTokenException("invalid_resource_token", $"Unable to resolve issuer keys: {ex.Message}");
+        }
+
+        if (keys.Keys.Count == 0)
+            throw new AAuthTokenException("invalid_resource_token", $"No keys found for issuer {decoded.Issuer}");
+
+        var validationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = false,
+            IssuerSigningKeys = keys.Keys,
+            ValidTypes = new[] { "aa-resource+jwt" }
+        };
+
+        var handler = new JsonWebTokenHandler();
+        var result = await handler.ValidateTokenAsync(rawResourceToken, validationParameters);
+        if (!result.IsValid)
+        {
+            if (result.Exception is SecurityTokenExpiredException)
+                throw new AAuthTokenException("token_expired", "Resource token has expired");
+            if (result.Exception is SecurityTokenNotYetValidException)
+                throw new AAuthTokenException("token_not_yet_valid", "Resource token is not yet valid");
+
+            var detail = result.Exception?.Message ?? "Resource token signature validation failed";
+            throw new AAuthTokenException("invalid_resource_token", detail);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (decoded.ExpiresAt + ResourceTokenClockSkew < now)
+            throw new AAuthTokenException("token_expired", "Resource token has expired");
+        if (decoded.IssuedAt - ResourceTokenClockSkew > now)
+            throw new AAuthTokenException("token_not_yet_valid", "Resource token is not yet valid");
+
+        return decoded;
     }
 
     private async Task<HttpResponseMessage> HandleResourceInteraction(

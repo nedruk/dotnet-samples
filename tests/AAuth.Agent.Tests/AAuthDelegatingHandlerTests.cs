@@ -8,6 +8,7 @@ using AAuth.Core.Discovery;
 using AAuth.Core.Headers;
 using AAuth.Core.Signatures;
 using AAuth.Core.Tokens;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Xunit;
 
@@ -15,6 +16,10 @@ namespace AAuth.Agent.Tests;
 
 public class AAuthDelegatingHandlerTests
 {
+    private const string ResourceUrl = "https://resource.example.com";
+    private const string AuthServerUrl = "https://ps.example.com";
+    private const string AgentSubject = "aauth:test-agent@example.com";
+
     // ──────────────────────────────────────────────────────────────
     // Test 1: Full 401 challenge-response (agent → 401 → token exchange → retry → 200)
     // Mirrors TypeScript e2e "Full 401 challenge-response"
@@ -32,6 +37,9 @@ public class AAuthDelegatingHandlerTests
         // the metadata fetch will throw HttpRequestException (no server).
         // This validates the handler correctly identified the challenge and entered the exchange path.
         var (_, _, _, getKeyMaterial) = CreateTestKeyMaterial();
+        var (resourceSigningKey, resourcePubJwk, _) = CreateEphemeralKey();
+        var resolver = CreateResourceTokenKeyResolver(resourcePubJwk);
+        var resourceToken = CreateResourceTokenJwt(resourceSigningKey);
         var mockInner = new MockInnerHandler();
 
         // Resource server returns 401 with AAuth-Requirement
@@ -39,16 +47,16 @@ public class AAuthDelegatingHandlerTests
         {
             var resp = new HttpResponseMessage(HttpStatusCode.Unauthorized);
             resp.Headers.TryAddWithoutValidation("aauth-requirement",
-                AAuthRequirement.BuildAuthToken("rt_test_resource_token_123"));
+                AAuthRequirement.BuildAuthToken(resourceToken));
             return resp;
         });
 
         var options = new AAuthAgentOptions
         {
             GetKeyMaterial = getKeyMaterial,
-            AuthServerUrl = "https://ps.example.com"
+            AuthServerUrl = AuthServerUrl
         };
-        var handler = new AAuthDelegatingHandler(options, new IssuerKeyResolver(new HttpClient()))
+        var handler = new AAuthDelegatingHandler(options, resolver)
         {
             InnerHandler = mockInner
         };
@@ -56,7 +64,7 @@ public class AAuthDelegatingHandlerTests
 
         // Act & Assert: handler detects the 401 challenge and tries to reach the PS
         await Assert.ThrowsAsync<HttpRequestException>(
-            () => client.GetAsync("https://resource.example.com/api/data"));
+            () => client.GetAsync($"{ResourceUrl}/api/data"));
 
         // Verify the initial signed request was sent with signature headers
         Assert.Single(mockInner.SentRequests);
@@ -104,8 +112,8 @@ public class AAuthDelegatingHandlerTests
         var client = new HttpClient(handler);
 
         // Act
-        var r1 = await client.GetAsync("https://resource.example.com/api/data");
-        var r2 = await client.GetAsync("https://resource.example.com/api/other");
+        var r1 = await client.GetAsync($"{ResourceUrl}/api/data");
+        var r2 = await client.GetAsync($"{ResourceUrl}/api/other");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, r1.StatusCode);
@@ -134,25 +142,28 @@ public class AAuthDelegatingHandlerTests
     public async Task JustificationAndHints_PassThroughToTokenEndpoint()
     {
         var (_, _, _, getKeyMaterial) = CreateTestKeyMaterial();
+        var (resourceSigningKey, resourcePubJwk, _) = CreateEphemeralKey();
+        var resolver = CreateResourceTokenKeyResolver(resourcePubJwk);
+        var resourceToken = CreateResourceTokenJwt(resourceSigningKey);
         var mockInner = new MockInnerHandler();
 
         mockInner.EnqueueResponse(_ =>
         {
             var resp = new HttpResponseMessage(HttpStatusCode.Unauthorized);
             resp.Headers.TryAddWithoutValidation("aauth-requirement",
-                AAuthRequirement.BuildAuthToken("rt_justification_test"));
+                AAuthRequirement.BuildAuthToken(resourceToken));
             return resp;
         });
 
         var options = new AAuthAgentOptions
         {
             GetKeyMaterial = getKeyMaterial,
-            AuthServerUrl = "https://ps.example.com",
+            AuthServerUrl = AuthServerUrl,
             Justification = "Need access for automated billing",
             LoginHint = "user@corp.com",
             Tenant = "tenant-42"
         };
-        var handler = new AAuthDelegatingHandler(options, new IssuerKeyResolver(new HttpClient()))
+        var handler = new AAuthDelegatingHandler(options, resolver)
         {
             InnerHandler = mockInner
         };
@@ -161,7 +172,7 @@ public class AAuthDelegatingHandlerTests
         // Handler detects 401 → attempts PS metadata fetch which fails (no server)
         // proving it entered the token exchange path with justification/hint/tenant set
         await Assert.ThrowsAsync<HttpRequestException>(
-            () => client.GetAsync("https://resource.example.com/api/billing"));
+            () => client.GetAsync($"{ResourceUrl}/api/billing"));
 
         // Verify the options are accessible (they are sent in HandleAuthTokenChallenge)
         Assert.Equal("Need access for automated billing", options.Justification);
@@ -196,7 +207,7 @@ public class AAuthDelegatingHandlerTests
         };
         var client = new HttpClient(handler);
 
-        var response = await client.GetAsync("https://resource.example.com/api/data");
+        var response = await client.GetAsync($"{ResourceUrl}/api/data");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Single(mockInner.SentRequests);
@@ -225,7 +236,7 @@ public class AAuthDelegatingHandlerTests
         };
         var client = new HttpClient(handler);
 
-        await client.GetAsync("https://resource.example.com/api/data");
+        await client.GetAsync($"{ResourceUrl}/api/data");
 
         var req = mockInner.SentRequests[0];
         Assert.True(req.Headers.Contains("AAuth-Capabilities"));
@@ -249,9 +260,128 @@ public class AAuthDelegatingHandlerTests
         };
         var client = new HttpClient(handler);
 
-        var response = await client.GetAsync("https://resource.example.com/api/data");
+        var response = await client.GetAsync($"{ResourceUrl}/api/data");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Challenge_WithForgedResourceToken_ThrowsInvalidResourceToken()
+    {
+        var (_, _, _, getKeyMaterial) = CreateTestKeyMaterial();
+        var (_, trustedPubJwk, _) = CreateEphemeralKey();
+        var (rogueSigningKey, _, _) = CreateEphemeralKey();
+        var resolver = CreateResourceTokenKeyResolver(trustedPubJwk);
+        var forgedResourceToken = CreateResourceTokenJwt(rogueSigningKey);
+
+        var mockInner = new MockInnerHandler();
+        mockInner.EnqueueResponse(_ =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            resp.Headers.TryAddWithoutValidation("aauth-requirement",
+                AAuthRequirement.BuildAuthToken(forgedResourceToken));
+            return resp;
+        });
+
+        var options = new AAuthAgentOptions { GetKeyMaterial = getKeyMaterial, AuthServerUrl = AuthServerUrl };
+        var handler = new AAuthDelegatingHandler(options, resolver) { InnerHandler = mockInner };
+        var client = new HttpClient(handler);
+
+        var ex = await Assert.ThrowsAsync<AAuthTokenException>(
+            () => client.GetAsync($"{ResourceUrl}/api/data"));
+
+        Assert.Equal("invalid_resource_token", ex.Code);
+        Assert.Single(mockInner.SentRequests);
+    }
+
+    [Fact]
+    public async Task Challenge_WithInvalidResourceTokenType_ThrowsInvalidResourceToken()
+    {
+        var (_, _, _, getKeyMaterial) = CreateTestKeyMaterial();
+        var (resourceSigningKey, resourcePubJwk, _) = CreateEphemeralKey();
+        var resolver = CreateResourceTokenKeyResolver(resourcePubJwk);
+        var invalidTypeToken = CreateResourceTokenJwt(resourceSigningKey, tokenType: "aa-auth+jwt");
+
+        var mockInner = new MockInnerHandler();
+        mockInner.EnqueueResponse(_ =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            resp.Headers.TryAddWithoutValidation("aauth-requirement",
+                AAuthRequirement.BuildAuthToken(invalidTypeToken));
+            return resp;
+        });
+
+        var options = new AAuthAgentOptions { GetKeyMaterial = getKeyMaterial, AuthServerUrl = AuthServerUrl };
+        var handler = new AAuthDelegatingHandler(options, resolver) { InnerHandler = mockInner };
+        var client = new HttpClient(handler);
+
+        var ex = await Assert.ThrowsAsync<AAuthTokenException>(
+            () => client.GetAsync($"{ResourceUrl}/api/data"));
+
+        Assert.Equal("invalid_resource_token", ex.Code);
+        Assert.Single(mockInner.SentRequests);
+    }
+
+    [Fact]
+    public async Task Challenge_WithExpiredResourceToken_ThrowsTokenExpired()
+    {
+        var (_, _, _, getKeyMaterial) = CreateTestKeyMaterial();
+        var (resourceSigningKey, resourcePubJwk, _) = CreateEphemeralKey();
+        var resolver = CreateResourceTokenKeyResolver(resourcePubJwk);
+        var now = DateTimeOffset.UtcNow;
+        var expiredToken = CreateResourceTokenJwt(
+            resourceSigningKey,
+            issuedAt: now.AddMinutes(-30),
+            expiresAt: now.AddMinutes(-10));
+
+        var mockInner = new MockInnerHandler();
+        mockInner.EnqueueResponse(_ =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            resp.Headers.TryAddWithoutValidation("aauth-requirement",
+                AAuthRequirement.BuildAuthToken(expiredToken));
+            return resp;
+        });
+
+        var options = new AAuthAgentOptions { GetKeyMaterial = getKeyMaterial, AuthServerUrl = AuthServerUrl };
+        var handler = new AAuthDelegatingHandler(options, resolver) { InnerHandler = mockInner };
+        var client = new HttpClient(handler);
+
+        var ex = await Assert.ThrowsAsync<AAuthTokenException>(
+            () => client.GetAsync($"{ResourceUrl}/api/data"));
+
+        Assert.Equal("token_expired", ex.Code);
+        Assert.Single(mockInner.SentRequests);
+    }
+
+    [Fact]
+    public async Task Challenge_WithInvalidResourceTokenIssuer_ThrowsInvalidResourceTokenBeforeKeyDiscovery()
+    {
+        var (_, _, _, getKeyMaterial) = CreateTestKeyMaterial();
+        var (resourceSigningKey, _, _) = CreateEphemeralKey();
+        var resolverHandler = new MockResolverHandler();
+        var resolver = new IssuerKeyResolver(new HttpClient(resolverHandler));
+        var invalidIssuerToken = CreateResourceTokenJwt(resourceSigningKey, issuer: "http://RESOURCE.example.com/path");
+
+        var mockInner = new MockInnerHandler();
+        mockInner.EnqueueResponse(_ =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            resp.Headers.TryAddWithoutValidation("aauth-requirement",
+                AAuthRequirement.BuildAuthToken(invalidIssuerToken));
+            return resp;
+        });
+
+        var options = new AAuthAgentOptions { GetKeyMaterial = getKeyMaterial, AuthServerUrl = AuthServerUrl };
+        var handler = new AAuthDelegatingHandler(options, resolver) { InnerHandler = mockInner };
+        var client = new HttpClient(handler);
+
+        var ex = await Assert.ThrowsAsync<AAuthTokenException>(
+            () => client.GetAsync($"{ResourceUrl}/api/data"));
+
+        Assert.Equal("invalid_resource_token", ex.Code);
+        Assert.Empty(resolverHandler.SentRequests);
+        Assert.Single(mockInner.SentRequests);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -275,7 +405,7 @@ public class AAuthDelegatingHandlerTests
         var agentJwt = AgentToken.Create(new AgentTokenOptions
         {
             Issuer = "https://agent-server.example.com",
-            Subject = "aauth:test-agent@example.com",
+            Subject = AgentSubject,
             PublicKey = pubJwk,
             Lifetime = TimeSpan.FromHours(1)
         }, new SigningCredentials(new ECDsaSecurityKey(issuerEcdsa), SecurityAlgorithms.EcdsaSha256));
@@ -288,6 +418,102 @@ public class AAuthDelegatingHandlerTests
         });
 
         return (ecdsa, pubJwk, agentJwt, getKm);
+    }
+
+    private static (ECDsa signingKey, JsonWebKey pubJwk, string thumbprint) CreateEphemeralKey()
+    {
+        var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var ecParams = ecdsa.ExportParameters(false);
+        var jwk = new JsonWebKey
+        {
+            Kty = "EC",
+            Crv = "P-256",
+            X = Base64UrlEncoder.Encode(ecParams.Q.X!),
+            Y = Base64UrlEncoder.Encode(ecParams.Q.Y!)
+        };
+        var thumbprint = JsonWebKeyThumbprint.Compute(jwk);
+        return (ecdsa, jwk, thumbprint);
+    }
+
+    private static string CreateResourceTokenJwt(
+        ECDsa signingKey,
+        string tokenType = "aa-resource+jwt",
+        DateTimeOffset? issuedAt = null,
+        DateTimeOffset? expiresAt = null,
+        string issuer = ResourceUrl,
+        string audience = AuthServerUrl,
+        string agent = AgentSubject)
+    {
+        var now = issuedAt ?? DateTimeOffset.UtcNow;
+        var exp = expiresAt ?? now.AddMinutes(5);
+        var handler = new JsonWebTokenHandler();
+        var claims = new Dictionary<string, object>
+        {
+            ["iss"] = issuer,
+            ["dwk"] = "aauth-resource.json",
+            ["aud"] = audience,
+            ["jti"] = Guid.NewGuid().ToString(),
+            ["agent"] = agent,
+            ["agent_jkt"] = "test-jkt",
+            ["iat"] = now.ToUnixTimeSeconds(),
+            ["exp"] = exp.ToUnixTimeSeconds()
+        };
+
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Claims = claims,
+            SigningCredentials = new SigningCredentials(
+                new ECDsaSecurityKey(signingKey), SecurityAlgorithms.EcdsaSha256),
+            TokenType = tokenType
+        };
+
+        return handler.CreateToken(descriptor);
+    }
+
+    private static IssuerKeyResolver CreateResourceTokenKeyResolver(
+        JsonWebKey resourcePubJwk, string issuer = ResourceUrl)
+    {
+        var handler = new MockResolverHandler();
+        ConfigureMockJwks(handler, issuer, "aauth-resource.json", resourcePubJwk);
+        return new IssuerKeyResolver(new HttpClient(handler));
+    }
+
+    private static void ConfigureMockJwks(
+        MockResolverHandler handler, string issuerUrl, string dwk, JsonWebKey pubJwk)
+    {
+        var jwksUrl = $"{issuerUrl}/jwks";
+        var metadataUrl = $"{issuerUrl}/.well-known/{dwk}";
+        handler.AddResponse(metadataUrl, JsonSerializer.Serialize(new { jwks_uri = jwksUrl }));
+
+        var jwks = new { keys = new[] { new { kty = pubJwk.Kty, crv = pubJwk.Crv, x = pubJwk.X, y = pubJwk.Y } } };
+        handler.AddResponse(jwksUrl, JsonSerializer.Serialize(jwks));
+    }
+
+    /// <summary>
+    /// Mock inner handler that queues responses and captures sent requests.
+    /// </summary>
+    private sealed class MockResolverHandler : HttpMessageHandler
+    {
+        private readonly Dictionary<string, string> _responses = new();
+        public List<HttpRequestMessage> SentRequests { get; } = new();
+
+        public void AddResponse(string url, string jsonBody) => _responses[url] = jsonBody;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            SentRequests.Add(request);
+
+            if (_responses.TryGetValue(request.RequestUri!.ToString(), out var body))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json")
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
     }
 
     /// <summary>

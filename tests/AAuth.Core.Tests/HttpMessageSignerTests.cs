@@ -70,6 +70,62 @@ public class HttpMessageSignerTests
     }
 
     [Fact]
+    public void SignAndVerify_RoundTripWithEd25519_Succeeds()
+    {
+        var signingKey = Ed25519PrivateKey.Generate();
+        var jwk = signingKey.ExportPublicJwk();
+        var signatureKey = new SignatureKeyValue.Jwt("test.ed25519.token");
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/test");
+        HttpMessageSigner.Sign(request, signingKey, signatureKey);
+
+        var result = HttpMessageSigner.Verify(request, jwk);
+
+        Assert.True(result.IsValid, result.Error);
+        Assert.NotNull(result.Thumbprint);
+    }
+
+    [Fact]
+    public void Verify_Ed25519WrongPublicKey_Fails()
+    {
+        var signingKey = Ed25519PrivateKey.Generate();
+        var signatureKey = new SignatureKeyValue.Jwt("test.ed25519.token");
+        var wrongJwk = Ed25519PrivateKey.Generate().ExportPublicJwk();
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/test");
+        HttpMessageSigner.Sign(request, signingKey, signatureKey);
+
+        var result = HttpMessageSigner.Verify(request, wrongJwk);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Error);
+        Assert.Contains("Signature verification failed", result.Error);
+    }
+
+    [Fact]
+    public void Verify_Ed25519WrongAlg_Fails()
+    {
+        var signingKey = Ed25519PrivateKey.Generate();
+        var validJwk = signingKey.ExportPublicJwk();
+        var wrongAlgJwk = new JsonWebKey
+        {
+            Kty = "OKP",
+            Crv = "Ed25519",
+            Alg = "ES256",
+            X = validJwk.X
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/test");
+        HttpMessageSigner.Sign(request, signingKey, new SignatureKeyValue.Jwt("test.ed25519.token"));
+
+        var result = HttpMessageSigner.Verify(request, wrongAlgJwk);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Error);
+        Assert.Contains("Expected EdDSA", result.Error);
+    }
+
+    [Fact]
     public void Verify_TamperedRequest_Fails()
     {
         var (signingKey, jwk) = CreateEcdsaKeyPair();
@@ -107,6 +163,38 @@ public class HttpMessageSignerTests
 
         var siHeader = request.Headers.GetValues("Signature-Input").First();
         Assert.Contains("aauth-mission", siHeader);
+    }
+
+    [Theory]
+    [InlineData("@method")]
+    [InlineData("@authority")]
+    [InlineData("@path")]
+    [InlineData("signature-key")]
+    public void Verify_SignatureInputMissingRequiredComponent_ReturnsClearFailure(string missingComponent)
+    {
+        var (signingKey, jwk) = CreateEcdsaKeyPair();
+        var agentJwt = CreateTestAgentToken(signingKey, jwk);
+        var signatureKey = new SignatureKeyValue.Jwt(agentJwt);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/test");
+        HttpMessageSigner.Sign(request, signingKey, signatureKey);
+
+        var parsedInput = SignatureInput.Parse(request.Headers.GetValues("Signature-Input").First());
+        var tamperedComponents = parsedInput.CoveredComponents
+            .Where(component => component != missingComponent)
+            .ToList();
+
+        request.Headers.Remove("Signature-Input");
+        request.Headers.TryAddWithoutValidation(
+            "Signature-Input",
+            new SignatureInput(tamperedComponents, parsedInput.Created).Serialize());
+
+        var result = HttpMessageSigner.Verify(request, jwk);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Error);
+        Assert.Contains("Signature-Input missing required components", result.Error);
+        Assert.Contains(missingComponent, result.Error);
     }
 
     private static (ECDsa key, JsonWebKey jwk) CreateEcdsaKeyPair()
