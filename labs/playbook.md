@@ -130,6 +130,8 @@ Commands:
 - `exchange` — POST PS `/token` with resource token → get auth token
 - `access` — GET `/api/documents` with auth token
 - `flow [scope]` — run all three steps automatically
+- `token` — print the full agent token JWT (for Mode B signing)
+- `keys` — print all public key identifiers
 - `tokens`, `metadata` — inspect stored tokens and server metadata
 
 **What to observe:**
@@ -158,6 +160,8 @@ Commands:
 - `access` — access protected resource with auth token
 - `complete [summary]` — mark mission as complete (blocks until accepted)
 - `flow [scope]`, `status` — automated flow and state inspection
+- `token` — print the full agent token JWT (for Mode B signing)
+- `keys` — print all public key identifiers
 
 **Note:** `mission`, `permission`, and `complete` block the REPL while polling for dashboard approval — open `{psUrl}/dashboard` in a browser to approve.
 
