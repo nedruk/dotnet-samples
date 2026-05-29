@@ -69,7 +69,7 @@ Commands to run:
 - `valid`: expected `200` — agent is on the allowlist
 - `unknown`: expected `401` — self-issued token with unknown issuer (JWKS unreachable)
 - `unsigned`: expected `401` — no signature headers at all
-- `token`, `keys` for inspection
+- `token`, `signing-key`, `keys` for inspection
 
 **What to observe:**
 - `200` vs `401` demonstrates that the resource trusts the **signature chain** (JWT issuer → JWKS → public key → HTTP signature), not just any valid JWT.
@@ -91,6 +91,7 @@ Commands:
 - `poll <id>` — manually poll a pending URL (Mode B helper)
 - `use <AAuth-Access-token>` — manually call with explicit access token (Mode B helper)
 - `token` — print agent JWT (for manual `.http` flow)
+- `signing-key` — print the ephemeral private key JWK (for SignTool)
 
 **How `call` works behind the scenes:**
 
@@ -131,6 +132,7 @@ Commands:
 - `access` — GET `/api/documents` with auth token
 - `flow [scope]` — run all three steps automatically
 - `token` — print the full agent token JWT (for Mode B signing)
+- `signing-key` — print the ephemeral private key JWK (for SignTool)
 - `keys` — print all public key identifiers
 - `tokens`, `metadata` — inspect stored tokens and server metadata
 
@@ -161,6 +163,7 @@ Commands:
 - `complete [summary]` — mark mission as complete (blocks until accepted)
 - `flow [scope]`, `status` — automated flow and state inspection
 - `token` — print the full agent token JWT (for Mode B signing)
+- `signing-key` — print the ephemeral private key JWK (for SignTool)
 - `keys` — print all public key identifiers
 
 **Note:** `mission`, `permission`, and `complete` block the REPL while polling for dashboard approval — open `{psUrl}/dashboard` in a browser to approve.
@@ -182,7 +185,7 @@ Commands:
 - `exchange [rt]` — POST `/token` to PS (triggers PS→AS federation) → get auth token
 - `access [at]` — GET `/api/data` on Resource 1 with auth token
 - `enriched [at]` — GET `/api/enriched` on Resource 1 (triggers R1→R2 call chaining)
-- `token`, `keys` — inspect demo agent JWT and all party keys
+- `token`, `signing-key`, `keys` — inspect demo agent JWT, private key, and all party keys
 
 **What to observe:**
 - The resource token's `aud` points to the Access Server, not the PS directly.
@@ -198,11 +201,12 @@ Use files in `labs/http/`.
 ### 1) Start the target sample
 Run sample in a separate terminal (`--interactive` is convenient because it prints useful tokens/URLs).
 
-### 2) Get a JWT for signing
-For sample flows, use `token` command in interactive mode and copy JWT to shell:
+### 2) Get JWT and signing key
+For sample flows, use `token` and `signing-key` commands in interactive mode and copy to shell:
 
 ```bash
-export AGENT_JWT='<paste JWT>'
+export AGENT_JWT='<paste JWT from token command>'
+export SIGNING_KEY='<paste JWK from signing-key command>'
 ```
 
 ### 3) Generate AAuth signature headers
@@ -229,17 +233,18 @@ dotnet run --project labs/scripts/AAuth.SignTool -- \
 ```
 
 If signing with an **auth token** (Samples 3–5, access steps):  
-The auth token's `cnf.jwk` only has the public key — the PS/AS doesn't know your private key.  
-Use `--key-jwt` to supply the agent token (which has the private key) for signing:
+The auth token's `cnf.jwk` only has the public key — you need the private key separately.  
+Use the `signing-key` command in the sample's REPL to get the private key JWK:
 ```bash
+export SIGNING_KEY='<paste JWK from signing-key command>'
 export AUTH_TOKEN='<paste auth token from exchange step>'
 dotnet run --project labs/scripts/AAuth.SignTool -- \
   --jwt "$AUTH_TOKEN" \
-  --key-jwt "$AGENT_JWT" \
+  --signing-key "$SIGNING_KEY" \
   --method GET \
   --url "https://localhost:3012/api/documents"
 ```
-`--jwt` sets the `Signature-Key` header value (auth token), `--key-jwt` provides the private key for the actual signature.
+`--jwt` sets the `Signature-Key` header value (auth token), `--signing-key` provides the private key JWK for the actual signature.
 
 If request includes `AAuth-Mission` and you need it signed:
 ```bash

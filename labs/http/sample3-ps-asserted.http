@@ -72,11 +72,11 @@ Signature: {{tokenSig}}
 
 ### Step 3: Access protected API with auth token (expected 200)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers.
-# The auth token's cnf.jwk has only the PUBLIC key — the PS doesn't know your private key.
-# Use --key-jwt to supply the agent token (which has the private key) for signing,
-# while --jwt provides the auth token as the Signature-Key header value.
+# The auth token's cnf.jwk has only the PUBLIC key — you need the private key separately.
+# Use `signing-key` command in the sample REPL to get the private key JWK, then:
 @authToken = REPLACE_AUTH_TOKEN_JWT
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$authToken" --key-jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/documents"
+# SIGNING_KEY=$(dotnet run --project samples/PSAssertedAccess -- <<< "signing-key" 2>/dev/null | grep '{')
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$authToken" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/api/documents"
 @accessSigKey = REPLACE_SIGNATURE_KEY
 @accessSigInput = REPLACE_SIGNATURE_INPUT
 @accessSig = REPLACE_SIGNATURE

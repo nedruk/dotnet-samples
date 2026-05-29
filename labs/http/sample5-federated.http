@@ -73,9 +73,11 @@ Signature: {{psTokenSig}}
 
 ### Step 3: Access R1 data with auth token (expected 200)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers.
-# The auth token's cnf.jwk has only the PUBLIC key — use --key-jwt with the agent token for signing.
+# The auth token's cnf.jwk has only the PUBLIC key — you need the private key separately.
+# Use `signing-key` command in the sample REPL to get the private key JWK, then:
 @r1AuthToken = REPLACE_R1_AUTH_TOKEN
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --key-jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/data"
+# SIGNING_KEY=$(dotnet run --project samples/FederatedAccess -- <<< "signing-key" 2>/dev/null | grep '{')
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/api/data"
 @r1AccessSigKey = REPLACE_SIGNATURE_KEY
 @r1AccessSigInput = REPLACE_SIGNATURE_INPUT
 @r1AccessSig = REPLACE_SIGNATURE
@@ -91,8 +93,8 @@ Signature: {{r1AccessSig}}
 
 ### Step 4: Call chaining through R1 /api/enriched (R1 authorizes R2 behind the scenes)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers.
-# Use --key-jwt with the agent token for signing (auth token has public key only).
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --key-jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/enriched"
+# Use `signing-key` command to get the private key JWK (auth token has public key only).
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/api/enriched"
 @enrichedSigKey = REPLACE_SIGNATURE_KEY
 @enrichedSigInput = REPLACE_SIGNATURE_INPUT
 @enrichedSig = REPLACE_SIGNATURE

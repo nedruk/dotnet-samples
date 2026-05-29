@@ -280,6 +280,13 @@ async Task RunInteractive()
             continue;
         }
 
+        if (cmd == "signing-key")
+        {
+            Console.WriteLine(SerializePrivateJwk(ephemeralKey));
+            Console.WriteLine();
+            continue;
+        }
+
         try
         {
             if (cmd == "authorize")
@@ -482,9 +489,24 @@ void PrintHelp()
     Console.WriteLine("  access             GET /api/documents with stored auth token");
     Console.WriteLine("  flow [scope]       Run all 3 steps in sequence");
     Console.WriteLine("  token              Print the full agent token (JWT)");
+    Console.WriteLine("  signing-key        Print the ephemeral private key (JWK, for SignTool)");
     Console.WriteLine("  keys               Print all public key identifiers");
     Console.WriteLine("  tokens             Show stored tokens (decoded claims)");
     Console.WriteLine("  metadata           Show all server metadata URLs");
     Console.WriteLine("  help               Show commands");
     Console.WriteLine("  quit               Shut down");
+}
+
+string SerializePrivateJwk(ECDsa key)
+{
+    var parameters = key.ExportParameters(true);
+    var dict = new Dictionary<string, string>
+    {
+        ["kty"] = "EC",
+        ["crv"] = "P-256",
+        ["x"] = Base64UrlEncoder.Encode(parameters.Q.X!),
+        ["y"] = Base64UrlEncoder.Encode(parameters.Q.Y!),
+        ["d"] = Base64UrlEncoder.Encode(parameters.D!)
+    };
+    return System.Text.Json.JsonSerializer.Serialize(dict);
 }

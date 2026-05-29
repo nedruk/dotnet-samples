@@ -61,8 +61,7 @@ public sealed class AgentToken
             ["jti"] = Guid.NewGuid().ToString(),
             ["cnf"] = new Dictionary<string, object>
             {
-                ["jwk"] = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(
-                    System.Text.Json.JsonSerializer.Serialize(options.PublicKey))!
+                ["jwk"] = StripPrivateKeyParameters(options.PublicKey)
             },
             ["iat"] = now.ToUnixTimeSeconds(),
             ["exp"] = now.Add(options.Lifetime).ToUnixTimeSeconds()
@@ -117,6 +116,27 @@ public sealed class AgentToken
             ps = psClaim.Value;
 
         return new AgentToken(iss, dwk, sub, jti, confirmationKey, iat, exp, ps, rawJwt);
+    }
+
+    /// <summary>
+    /// Strips private key parameters from a JWK, keeping only public key material.
+    /// Ensures that cnf.jwk never leaks private keys (e.g., EC 'd' or OKP 'd').
+    /// </summary>
+    private static Dictionary<string, object> StripPrivateKeyParameters(JsonWebKey jwk)
+    {
+        var serialized = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(
+            System.Text.Json.JsonSerializer.Serialize(jwk))!;
+
+        // Remove EC and OKP private key parameters
+        serialized.Remove("d");
+        serialized.Remove("dp");
+        serialized.Remove("dq");
+        serialized.Remove("p");
+        serialized.Remove("q");
+        serialized.Remove("qi");
+        serialized.Remove("k"); // symmetric key
+
+        return serialized;
     }
 }
 

@@ -186,6 +186,13 @@ public class Program
                 continue;
             }
 
+            if (input == "signing-key")
+            {
+                Console.WriteLine(SerializePrivateJwk(ephemeralKey));
+                Console.WriteLine();
+                continue;
+            }
+
             try
             {
                 if (input == "unsigned")
@@ -285,6 +292,7 @@ public class Program
         Console.WriteLine("  unknown    Send a signed request with an untrusted self-issued token");
         Console.WriteLine("  unsigned   Send an unsigned request (plain fetch)");
         Console.WriteLine("  token      Print the full agent token (JWT)");
+        Console.WriteLine("  signing-key Print the ephemeral private key (JWK, for SignTool)");
         Console.WriteLine("  keys       Print the agent's public keys");
         Console.WriteLine("  help       Show commands");
         Console.WriteLine("  quit       Shut down");
@@ -300,5 +308,19 @@ public class Program
         if (request.Headers.TryGetValues("Signature-Key", out var sigKey))
             Console.WriteLine($"  Signature-Key: {string.Join("", sigKey)[..60]}...");
         Console.ResetColor();
+    }
+
+    static string SerializePrivateJwk(ECDsa key)
+    {
+        var parameters = key.ExportParameters(true);
+        var dict = new Dictionary<string, string>
+        {
+            ["kty"] = "EC",
+            ["crv"] = "P-256",
+            ["x"] = Base64UrlEncoder.Encode(parameters.Q.X!),
+            ["y"] = Base64UrlEncoder.Encode(parameters.Q.Y!),
+            ["d"] = Base64UrlEncoder.Encode(parameters.D!)
+        };
+        return System.Text.Json.JsonSerializer.Serialize(dict);
     }
 }
