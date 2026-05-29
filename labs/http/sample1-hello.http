@@ -1,0 +1,79 @@
+# Sample 1 - HelloAAuth manual requests
+# Start sample:
+#   dotnet run --project samples/HelloAAuth -- interactive
+# Get token in REPL:
+#   token
+# Generate signed headers:
+#   dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/hello"
+# NOTE: Signature-Input created timestamp is valid for ~60 seconds.
+# Regenerate and resend immediately if request returns 401.
+
+@apBase = https://localhost:3011
+@resourceBase = https://localhost:3012
+@agentJwt = {{$processEnv AGENT_JWT}}
+
+### Metadata - Agent Provider
+GET {{apBase}}/.well-known/aauth-agent.json
+
+# VERIFY:
+#   - 200 OK
+#   - Body contains "jwks_uri" pointing to AP's JWKS endpoint
+#   - Body contains "identifier" with the AP's AAuth identifier
+
+### Metadata - Agent Provider JWKS
+GET {{apBase}}/jwks
+
+# VERIFY:
+#   - 200 OK
+#   - Body is a JWK Set with at least one key (the AP's root public key)
+#   - Key "kid" matches the agent token's issuer key
+
+### VALID signed call (expected 200)
+# Paste values from signing script:
+@sigKey = REPLACE_SIGNATURE_KEY
+@sigInput = REPLACE_SIGNATURE_INPUT
+@sig = REPLACE_SIGNATURE
+
+GET {{resourceBase}}/api/hello
+Signature-Key: {{sigKey}}
+Signature-Input: {{sigInput}}
+Signature: {{sig}}
+
+# VERIFY:
+#   - 200 OK
+#   - Body JSON contains "agent" field matching the agent ID from the token
+#   - This proves: agent token valid + HTTP signature verified + agent on allowlist
+
+### UNSIGNED call (expected 401)
+GET {{resourceBase}}/api/hello
+
+# VERIFY:
+#   - 401 Unauthorized
+#   - No Signature/Signature-Input/Signature-Key headers → resource rejects immediately
+#   - This proves: HTTP Message Signatures are required, not optional
+
+### UNKNOWN/FORGED token call (expected 401 or 403)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh signature headers for this step.
+# The headers from the "VALID" step above have likely expired (>60s).
+#
+# Simple forged-token recipe:
+# 1) Copy the valid AGENT_JWT.
+# 2) Change ONE character in the JWT signature part (the 3rd segment, after the second '.').
+# 3) Use that tampered JWT as @unknownJwt, generate headers, and send (expect 401/403).
+# Optional "bad signature" variant:
+# - Keep @unknownJwt as-is, but change one character in @unknownSig before sending (expect 401).
+@unknownJwt = REPLACE_UNKNOWN_JWT
+@unknownSigKey = REPLACE_SIGNATURE_KEY
+@unknownSigInput = REPLACE_SIGNATURE_INPUT
+@unknownSig = REPLACE_SIGNATURE
+
+GET {{resourceBase}}/api/hello
+Signature-Key: {{unknownSigKey}}
+Signature-Input: {{unknownSigInput}}
+Signature: {{unknownSig}}
+
+# VERIFY:
+#   - 401 or 403
+#   - 401 = JWT signature invalid (tampered token) or HTTP signature mismatch
+#   - 403 = valid JWT but agent not on allowlist
+#   - This proves: the resource validates the full trust chain, not just header presence

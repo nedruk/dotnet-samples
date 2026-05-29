@@ -1,0 +1,115 @@
+# Sample 4 - MissionControl manual requests
+# Start sample:
+#   dotnet run --project samples/MissionControl -- interactive
+
+@resourceBase = https://localhost:3012
+@psBase = https://localhost:3013
+@apBase = https://localhost:3011
+@agentJwt = {{$processEnv AGENT_JWT}}
+
+### Metadata - AP/Resource/PS
+GET {{apBase}}/.well-known/aauth-agent.json
+###
+GET {{resourceBase}}/.well-known/aauth-resource.json
+###
+GET {{psBase}}/.well-known/aauth-person.json
+
+# VERIFY: All return 200 with discovery metadata
+
+### Step 1: Create mission (signed with agent token)
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3013/mission"
+@missionSigKey = REPLACE_SIGNATURE_KEY
+@missionSigInput = REPLACE_SIGNATURE_INPUT
+@missionSig = REPLACE_SIGNATURE
+
+POST {{psBase}}/mission
+Content-Type: application/json
+Signature-Key: {{missionSigKey}}
+Signature-Input: {{missionSigInput}}
+Signature: {{missionSig}}
+
+{
+  "description": "manual mission test",
+  "tools": [
+    { "name": "data.read", "description": "Read sample data" }
+  ]
+}
+
+# VERIFY:
+#   - 200 OK (auto-approved) or 202 Accepted (pending dashboard approval)
+#   - If 200: "AAuth-Mission" header present with approver=... and s256=...
+#   - If 202: "Location" header with polling URL — approve via dashboard then poll
+#   - The s256 is a SHA-256 hash of the mission body, binding the mission to its content
+
+### Step 2: Poll mission if pending (optional)
+@missionPendingId = REPLACE_PENDING_MISSION_ID
+GET {{psBase}}/pending/mission/{{missionPendingId}}
+
+# VERIFY:
+#   - 202 while pending, 200 once approved (with AAuth-Mission header)
+
+### Step 3: Authorize with mission header (signed component includes aauth-mission)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers that cover the aauth-mission component.
+@missionHeader = REPLACE_AAUTH_MISSION_HEADER_VALUE
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3012/authorize" --component aauth-mission --header "aauth-mission:{{missionHeader}}"
+@authzSigKey = REPLACE_SIGNATURE_KEY
+@authzSigInput = REPLACE_SIGNATURE_INPUT
+@authzSig = REPLACE_SIGNATURE
+
+POST {{resourceBase}}/authorize
+Content-Type: application/json
+AAuth-Mission: {{missionHeader}}
+Signature-Key: {{authzSigKey}}
+Signature-Input: {{authzSigInput}}
+Signature: {{authzSig}}
+
+{
+  "scope": "data.read"
+}
+
+# VERIFY:
+#   - 200 OK with resource_token in body
+#   - The Signature-Input must include "aauth-mission" in covered components
+#   - Decode resource_token: it should contain mission context (approver, s256)
+#   - This proves: mission context is signed and flows through the token chain
+
+### Step 4: Exchange at PS /token (signed with agent token)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers for the PS token endpoint.
+@resourceToken = REPLACE_RESOURCE_TOKEN_JWT
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3013/token"
+@tokenSigKey = REPLACE_SIGNATURE_KEY
+@tokenSigInput = REPLACE_SIGNATURE_INPUT
+@tokenSig = REPLACE_SIGNATURE
+
+POST {{psBase}}/token
+Content-Type: application/json
+Signature-Key: {{tokenSigKey}}
+Signature-Input: {{tokenSigInput}}
+Signature: {{tokenSig}}
+
+{
+  "resource_token": "{{resourceToken}}"
+}
+
+# VERIFY:
+#   - 200 OK with auth_token in body
+#   - Decode auth_token: should contain mission context from the resource_token
+#   - The mission hash (s256) is preserved through the entire chain
+
+### Step 5: Access resource using auth token (expected 200)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers using the auth token (not agent token).
+@authToken = REPLACE_AUTH_TOKEN_JWT
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{authToken}}" --method GET --url "https://localhost:3012/api/data"
+@accessSigKey = REPLACE_SIGNATURE_KEY
+@accessSigInput = REPLACE_SIGNATURE_INPUT
+@accessSig = REPLACE_SIGNATURE
+
+GET {{resourceBase}}/api/data
+Signature-Key: {{accessSigKey}}
+Signature-Input: {{accessSigInput}}
+Signature: {{accessSig}}
+
+# VERIFY:
+#   - 200 OK with protected data
+#   - Signature-Key contains the auth_token (not agent token)
+#   - The resource verifies both the auth token and mission context

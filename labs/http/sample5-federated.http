@@ -1,0 +1,115 @@
+# Sample 5 - FederatedAccess manual requests
+# Start sample:
+#   dotnet run --project samples/FederatedAccess -- interactive
+
+@resource1Base = https://localhost:3012
+@asBase = https://localhost:3014
+@resource2Base = https://localhost:3015
+@psBase = https://localhost:3013
+@apBase = https://localhost:3011
+@agentJwt = {{$processEnv AGENT_JWT}}
+
+### Metadata - AP/Resource1/PS/AS/Resource2
+GET {{apBase}}/.well-known/aauth-agent.json
+###
+GET {{resource1Base}}/.well-known/aauth-resource.json
+###
+GET {{psBase}}/.well-known/aauth-person.json
+###
+GET {{asBase}}/.well-known/aauth-access.json
+###
+GET {{resource2Base}}/.well-known/aauth-resource.json
+
+# VERIFY:
+#   - All return 200 OK with discovery metadata
+#   - Resource 1's metadata should show its resource identifier
+#   - Access Server serves aauth-access.json (not aauth-resource.json)
+#   - Resource 2's metadata shows its resource identifier (accessed by R1 during call chaining)
+
+### Step 1: R1 authorize with agent token -> resource_token
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3012/authorize"
+@r1AuthSigKey = REPLACE_SIGNATURE_KEY
+@r1AuthSigInput = REPLACE_SIGNATURE_INPUT
+@r1AuthSig = REPLACE_SIGNATURE
+
+POST {{resource1Base}}/authorize
+Content-Type: application/json
+Signature-Key: {{r1AuthSigKey}}
+Signature-Input: {{r1AuthSigInput}}
+Signature: {{r1AuthSig}}
+
+{
+  "scope": "weather.read"
+}
+
+# VERIFY:
+#   - 200 OK with resource_token
+#   - Decode resource_token: aud points to the Access Server (not the PS directly)
+#   - This is the key difference from Sample 3: federation routes through an AS
+
+### Step 2: PS token exchange for R1 resource token -> auth token
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers for the PS token endpoint.
+@r1ResourceToken = REPLACE_R1_RESOURCE_TOKEN
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3013/token"
+@psTokenSigKey = REPLACE_SIGNATURE_KEY
+@psTokenSigInput = REPLACE_SIGNATURE_INPUT
+@psTokenSig = REPLACE_SIGNATURE
+
+POST {{psBase}}/token
+Content-Type: application/json
+Signature-Key: {{psTokenSigKey}}
+Signature-Input: {{psTokenSigInput}}
+Signature: {{psTokenSig}}
+
+{
+  "resource_token": "{{r1ResourceToken}}"
+}
+
+# VERIFY:
+#   - 200 OK with auth_token
+#   - Decode auth_token: issuer is the AS (not the PS), dwk=aauth-access.json
+#   - The PS discovered the AS and forwarded the exchange (PS→AS federation)
+#   - This proves: the PS acts as a proxy, the AS is the actual token issuer
+
+### Step 3: Access R1 data with auth token (expected 200)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers using the auth token.
+@r1AuthToken = REPLACE_R1_AUTH_TOKEN
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --method GET --url "https://localhost:3012/api/data"
+@r1AccessSigKey = REPLACE_SIGNATURE_KEY
+@r1AccessSigInput = REPLACE_SIGNATURE_INPUT
+@r1AccessSig = REPLACE_SIGNATURE
+
+GET {{resource1Base}}/api/data
+Signature-Key: {{r1AccessSigKey}}
+Signature-Input: {{r1AccessSigInput}}
+Signature: {{r1AccessSig}}
+
+# VERIFY:
+#   - 200 OK with Resource 1's data
+#   - Signature-Key contains the AS-issued auth token
+
+### Step 4: Call chaining through R1 /api/enriched (R1 authorizes R2 behind the scenes)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers using the auth token.
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --method GET --url "https://localhost:3012/api/enriched"
+@enrichedSigKey = REPLACE_SIGNATURE_KEY
+@enrichedSigInput = REPLACE_SIGNATURE_INPUT
+@enrichedSig = REPLACE_SIGNATURE
+
+GET {{resource1Base}}/api/enriched
+Signature-Key: {{enrichedSigKey}}
+Signature-Input: {{enrichedSigInput}}
+Signature: {{enrichedSig}}
+
+# VERIFY:
+#   - 200 OK with combined data from Resource 1 AND Resource 2
+#   - R1 acted as an agent to R2: signed a request with its own agent token
+#   - The auth token for R2 contains nested "act" claims showing delegation:
+#     act.sub = R1's agent ID, proving the chain Agent → R1 → R2
+#   - This proves: call chaining with preserved delegation context
+
+### Negative: unsigned call to /api/enriched (expected 401)
+GET {{resource1Base}}/api/enriched
+
+# VERIFY:
+#   - 401 Unauthorized
+#   - No signature headers → immediate rejection

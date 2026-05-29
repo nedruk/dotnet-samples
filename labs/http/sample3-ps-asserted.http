@@ -1,0 +1,104 @@
+# Sample 3 - PSAssertedAccess manual requests
+# Start sample:
+#   dotnet run --project samples/PSAssertedAccess -- interactive
+
+@resourceBase = https://localhost:3012
+@psBase = https://localhost:3013
+@apBase = https://localhost:3011
+@agentJwt = {{$processEnv AGENT_JWT}}
+
+### Metadata - Agent Provider
+GET {{apBase}}/.well-known/aauth-agent.json
+
+# VERIFY: 200 with jwks_uri and identifier
+
+### Metadata - Resource
+GET {{resourceBase}}/.well-known/aauth-resource.json
+
+# VERIFY: 200 with resource identifier and capabilities
+
+### Metadata - Person Server
+GET {{psBase}}/.well-known/aauth-person.json
+
+# VERIFY:
+#   - 200 OK
+#   - Body contains "token_endpoint" — where agents exchange resource tokens
+#   - Body contains "jwks_uri" — PS's public keys for verifying auth tokens
+
+### Step 1: POST /authorize (signed with agent token) -> resource_token
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3012/authorize"
+@authzSigKey = REPLACE_SIGNATURE_KEY
+@authzSigInput = REPLACE_SIGNATURE_INPUT
+@authzSig = REPLACE_SIGNATURE
+
+POST {{resourceBase}}/authorize
+Content-Type: application/json
+Signature-Key: {{authzSigKey}}
+Signature-Input: {{authzSigInput}}
+Signature: {{authzSig}}
+
+{
+  "scope": "data.read"
+}
+
+# VERIFY:
+#   - 200 OK
+#   - Body JSON has "resource_token" — a JWT (typ: aa-resource+jwt)
+#   - Decode the resource_token: aud=PS URL, agent=agent ID, scope=data.read
+#   - The resource_token is an invitation for the PS to vouch for the agent
+
+### Step 2: POST PS /token (signed with agent token) -> auth_token
+@resourceToken = REPLACE_RESOURCE_TOKEN_JWT
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3013/token"
+@tokenSigKey = REPLACE_SIGNATURE_KEY
+@tokenSigInput = REPLACE_SIGNATURE_INPUT
+@tokenSig = REPLACE_SIGNATURE
+
+POST {{psBase}}/token
+Content-Type: application/json
+Signature-Key: {{tokenSigKey}}
+Signature-Input: {{tokenSigInput}}
+Signature: {{tokenSig}}
+
+{
+  "resource_token": "{{resourceToken}}"
+}
+
+# VERIFY:
+#   - 200 OK
+#   - Body JSON has "auth_token" — a JWT (typ: aa-auth+jwt) issued by the PS
+#   - Decode the auth_token: sub=person identity, aud=resource URL, agent=agent ID
+#   - The auth_token's cnf.jwk matches the agent's ephemeral public key (PoP binding)
+
+### Step 3: Access protected API with auth token (expected 200)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers. Use the auth token (not agent token) for signing.
+@authToken = REPLACE_AUTH_TOKEN_JWT
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$authToken" --method GET --url "https://localhost:3012/api/documents"
+@accessSigKey = REPLACE_SIGNATURE_KEY
+@accessSigInput = REPLACE_SIGNATURE_INPUT
+@accessSig = REPLACE_SIGNATURE
+
+GET {{resourceBase}}/api/documents
+Signature-Key: {{accessSigKey}}
+Signature-Input: {{accessSigInput}}
+Signature: {{accessSig}}
+
+# VERIFY:
+#   - 200 OK with protected document data
+#   - Note: Signature-Key contains the auth_token JWT (not the agent token)
+#   - The resource verifies: auth token signature (PS issuer) + HTTP signature (agent's key)
+
+### Step 4: Negative - call with agent token (expected 401 + AAuth-Requirement auth-token)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh signature headers using the agent token.
+# The headers from step 1 have expired. Re-run the signing command from step 1.
+
+GET {{resourceBase}}/api/documents
+Signature-Key: {{authzSigKey}}
+Signature-Input: {{authzSigInput}}
+Signature: {{authzSig}}
+
+# VERIFY:
+#   - 401 Unauthorized
+#   - "AAuth-Requirement" header: requirement=auth-token; resource-token="..."
+#   - The resource_token inside the header is a fresh invitation for token exchange
+#   - This proves: the resource requires an auth token (PS-asserted identity), not just any agent token

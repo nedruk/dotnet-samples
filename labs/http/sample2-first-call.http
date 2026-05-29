@@ -1,0 +1,106 @@
+# Sample 2 - FirstCallRegistration manual requests
+# Start sample:
+#   dotnet run --project samples/FirstCallRegistration -- interactive
+# Get token in REPL, then:
+#   token
+#   export AGENT_JWT='<jwt>'
+
+@resourceBase = https://localhost:3012
+@apBase = https://localhost:3011
+@agentJwt = {{$processEnv AGENT_JWT}}
+
+### Metadata - Agent Provider
+GET {{apBase}}/.well-known/aauth-agent.json
+
+# VERIFY:
+#   - 200 OK with jwks_uri and identifier fields
+
+### Metadata - Resource
+GET {{resourceBase}}/.well-known/aauth-resource.json
+
+# VERIFY:
+#   - 200 OK
+#   - Body contains resource metadata (identifier, supported capabilities)
+
+### Step 1: Signed call without access token (expected 202 + AAuth-Requirement interaction)
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/data"
+@step1SigKey = REPLACE_SIGNATURE_KEY
+@step1SigInput = REPLACE_SIGNATURE_INPUT
+@step1Sig = REPLACE_SIGNATURE
+
+GET {{resourceBase}}/api/data
+Signature-Key: {{step1SigKey}}
+Signature-Input: {{step1SigInput}}
+Signature: {{step1Sig}}
+
+# VERIFY:
+#   - 202 Accepted (NOT 200 — agent has no access token yet)
+#   - "AAuth-Requirement" header present with requirement=interaction, url=..., code=...
+#   - "Location" header with pending URL (e.g., /pending/{uuid})
+#   - Save the interaction code and pending ID for steps 2 and 3
+
+### Step 2: Approve interaction (from step 1 code)
+@interactionCode = REPLACE_CODE
+
+POST {{resourceBase}}/interact/approve
+Content-Type: application/json
+
+{
+  "code": "{{interactionCode}}"
+}
+
+# VERIFY:
+#   - 200 OK — approval accepted
+#   - This simulates the user clicking "Approve" in the browser consent page
+
+### Step 3: Poll pending URL (expected 200 + AAuth-Access once approved)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh signature headers for this polling request.
+# The headers from step 1 have likely expired (>60s).
+@pendingId = REPLACE_PENDING_ID
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/pending/{{pendingId}}"
+@pollSigKey = REPLACE_SIGNATURE_KEY
+@pollSigInput = REPLACE_SIGNATURE_INPUT
+@pollSig = REPLACE_SIGNATURE
+
+GET {{resourceBase}}/pending/{{pendingId}}
+Signature-Key: {{pollSigKey}}
+Signature-Input: {{pollSigInput}}
+Signature: {{pollSig}}
+
+# VERIFY:
+#   - 200 OK (if approved; 202 if still pending)
+#   - "AAuth-Access" header contains the opaque access token
+#   - Save the AAuth-Access token value for step 5
+#   - This is a one-time retrieval — the token is consumed after this response
+
+### Step 4: Poll same pending URL again (expected 410 Gone)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh signature headers.
+# Note: Even with valid signatures, the pending URL returns 410 after consumption.
+
+GET {{resourceBase}}/pending/{{pendingId}}
+Signature-Key: {{pollSigKey}}
+Signature-Input: {{pollSigInput}}
+Signature: {{pollSig}}
+
+# VERIFY:
+#   - 410 Gone — the pending URL was already consumed in step 3
+#   - This proves: pending URLs are single-use (replay protection)
+
+### Step 5: Signed call with AAuth-Access token (expected 200)
+# ⚠️ RE-SIGN REQUIRED: Generate fresh signature headers that cover the authorization component.
+@accessToken = REPLACE_AAUTH_ACCESS_TOKEN
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/data" --component authorization --header "authorization:AAuth {{accessToken}}"
+@authSigKey = REPLACE_SIGNATURE_KEY
+@authSigInput = REPLACE_SIGNATURE_INPUT
+@authSig = REPLACE_SIGNATURE
+
+GET {{resourceBase}}/api/data
+Authorization: AAuth {{accessToken}}
+Signature-Key: {{authSigKey}}
+Signature-Input: {{authSigInput}}
+Signature: {{authSig}}
+
+# VERIFY:
+#   - 200 OK with the protected resource data
+#   - The Signature-Input should include "authorization" in its covered components
+#   - This proves: the access token is bound to the agent's PoP key via signature
