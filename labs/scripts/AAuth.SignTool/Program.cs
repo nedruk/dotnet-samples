@@ -221,11 +221,15 @@ sealed class CliOptions
         Console.WriteLine("Generate AAuth HTTP Signature headers using existing .NET implementation.");
         Console.WriteLine();
         Console.WriteLine("Usage:");
-        Console.WriteLine("  dotnet run --project labs/scripts/AAuth.SignTool -- --jwt <JWT> --method <METHOD> --url <URL> [options]");
+        Console.WriteLine("  dotnet run --project labs/scripts/AAuth.SignTool -- --jwt <JWT> --signing-key <JWK> --method <METHOD> --url <URL> [options]");
+        Console.WriteLine();
+        Console.WriteLine("Required:");
+        Console.WriteLine("  --jwt <JWT>          Token JWT for the Signature-Key header (agent token or auth token)");
+        Console.WriteLine("  --signing-key <JWK>  Private signing key as JWK JSON (use 'signing-key' command in the sample REPL)");
+        Console.WriteLine("  --method <METHOD>    HTTP method (GET, POST, etc.)");
+        Console.WriteLine("  --url <URL>          Request URL");
         Console.WriteLine();
         Console.WriteLine("Options:");
-        Console.WriteLine("  --signing-key <JWK>  JWK JSON with the private signing key (required — use 'signing-key' command");
-        Console.WriteLine("                       in the sample's interactive mode to get this value).");
         Console.WriteLine("  --component <name>   Additional covered component (repeatable), e.g. authorization");
         Console.WriteLine("  --header <name:val>  Header value used for signing of additional components (repeatable)");
         Console.WriteLine("  -h, --help           Show this help");

@@ -26,7 +26,7 @@ GET {{psBase}}/.well-known/aauth-person.json
 #   - Body contains "jwks_uri" — PS's public keys for verifying auth tokens
 
 ### Step 1: POST /authorize (signed with agent token) -> resource_token
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3012/authorize"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3012/authorize"
 @authzSigKey = REPLACE_SIGNATURE_KEY
 @authzSigInput = REPLACE_SIGNATURE_INPUT
 @authzSig = REPLACE_SIGNATURE
@@ -49,7 +49,7 @@ Signature: {{authzSig}}
 
 ### Step 2: POST PS /token (signed with agent token) -> auth_token
 @resourceToken = REPLACE_RESOURCE_TOKEN_JWT
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3013/token"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3013/token"
 @tokenSigKey = REPLACE_SIGNATURE_KEY
 @tokenSigInput = REPLACE_SIGNATURE_INPUT
 @tokenSig = REPLACE_SIGNATURE

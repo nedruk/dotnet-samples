@@ -27,7 +27,7 @@ GET {{resource2Base}}/.well-known/aauth-resource.json
 #   - Resource 2's metadata shows its resource identifier (accessed by R1 during call chaining)
 
 ### Step 1: R1 authorize with agent token -> resource_token
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3012/authorize"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3012/authorize"
 @r1AuthSigKey = REPLACE_SIGNATURE_KEY
 @r1AuthSigInput = REPLACE_SIGNATURE_INPUT
 @r1AuthSig = REPLACE_SIGNATURE
@@ -50,7 +50,7 @@ Signature: {{r1AuthSig}}
 ### Step 2: PS token exchange for R1 resource token -> auth token
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers for the PS token endpoint.
 @r1ResourceToken = REPLACE_R1_RESOURCE_TOKEN
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3013/token"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3013/token"
 @psTokenSigKey = REPLACE_SIGNATURE_KEY
 @psTokenSigInput = REPLACE_SIGNATURE_INPUT
 @psTokenSig = REPLACE_SIGNATURE

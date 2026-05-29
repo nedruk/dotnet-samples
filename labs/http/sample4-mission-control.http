@@ -17,7 +17,7 @@ GET {{psBase}}/.well-known/aauth-person.json
 # VERIFY: All return 200 with discovery metadata
 
 ### Step 1: Create mission (signed with agent token)
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3013/mission"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3013/mission"
 @missionSigKey = REPLACE_SIGNATURE_KEY
 @missionSigInput = REPLACE_SIGNATURE_INPUT
 @missionSig = REPLACE_SIGNATURE
@@ -51,7 +51,7 @@ GET {{psBase}}/pending/mission/{{missionPendingId}}
 ### Step 3: Authorize with mission header (signed component includes aauth-mission)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers that cover the aauth-mission component.
 @missionHeader = REPLACE_AAUTH_MISSION_HEADER_VALUE
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3012/authorize" --component aauth-mission --header "aauth-mission:{{missionHeader}}"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3012/authorize" --component aauth-mission --header "aauth-mission:{{missionHeader}}"
 @authzSigKey = REPLACE_SIGNATURE_KEY
 @authzSigInput = REPLACE_SIGNATURE_INPUT
 @authzSig = REPLACE_SIGNATURE
@@ -76,7 +76,7 @@ Signature: {{authzSig}}
 ### Step 4: Exchange at PS /token (signed with agent token)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers for the PS token endpoint.
 @resourceToken = REPLACE_RESOURCE_TOKEN_JWT
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method POST --url "https://localhost:3013/token"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3013/token"
 @tokenSigKey = REPLACE_SIGNATURE_KEY
 @tokenSigInput = REPLACE_SIGNATURE_INPUT
 @tokenSig = REPLACE_SIGNATURE

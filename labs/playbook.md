@@ -218,6 +218,7 @@ Example:
 ```bash
 dotnet run --project labs/scripts/AAuth.SignTool -- \
   --jwt "$AGENT_JWT" \
+  --signing-key "$SIGNING_KEY" \
   --method GET \
   --url "https://localhost:3012/api/hello"
 ```
@@ -226,6 +227,7 @@ If request includes `Authorization` and you need it signed:
 ```bash
 dotnet run --project labs/scripts/AAuth.SignTool -- \
   --jwt "$AGENT_JWT" \
+  --signing-key "$SIGNING_KEY" \
   --method GET \
   --url "https://localhost:3012/api/data" \
   --component authorization \
@@ -233,10 +235,8 @@ dotnet run --project labs/scripts/AAuth.SignTool -- \
 ```
 
 If signing with an **auth token** (Samples 3–5, access steps):  
-The auth token's `cnf.jwk` only has the public key — you need the private key separately.  
-Use the `signing-key` command in the sample's REPL to get the private key JWK:
+Use the auth token as `--jwt` and the same `--signing-key` from above:
 ```bash
-export SIGNING_KEY='<paste JWK from signing-key command>'
 export AUTH_TOKEN='<paste auth token from exchange step>'
 dotnet run --project labs/scripts/AAuth.SignTool -- \
   --jwt "$AUTH_TOKEN" \
@@ -244,12 +244,17 @@ dotnet run --project labs/scripts/AAuth.SignTool -- \
   --method GET \
   --url "https://localhost:3012/api/documents"
 ```
-`--jwt` sets the `Signature-Key` header value (auth token), `--signing-key` provides the private key JWK for the actual signature.
+`--jwt` sets the `Signature-Key` header value (the token being presented), `--signing-key` provides the private key for the HTTP signature.
+
+> **Why is `--signing-key` always required?**  
+> Agent tokens strip private key material from `cnf.jwk` (only the public key is embedded).  
+> The private key never leaves the agent — use the `signing-key` REPL command to retrieve it.
 
 If request includes `AAuth-Mission` and you need it signed:
 ```bash
 dotnet run --project labs/scripts/AAuth.SignTool -- \
   --jwt "$AGENT_JWT" \
+  --signing-key "$SIGNING_KEY" \
   --method POST \
   --url "https://localhost:3012/authorize" \
   --component aauth-mission \

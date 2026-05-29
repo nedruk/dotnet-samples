@@ -1,10 +1,11 @@
 # Sample 1 - HelloAAuth manual requests
 # Start sample:
 #   dotnet run --project samples/HelloAAuth -- interactive
-# Get token in REPL:
-#   token
+# Get token and signing key in REPL:
+#   token          → export AGENT_JWT='<paste>'
+#   signing-key    → export SIGNING_KEY='<paste>'
 # Generate signed headers:
-#   dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/hello"
+#   dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/api/hello"
 # NOTE: Signature-Input created timestamp is valid for ~60 seconds.
 # Regenerate and resend immediately if request returns 401.
 

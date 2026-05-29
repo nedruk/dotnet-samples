@@ -1,9 +1,9 @@
 # Sample 2 - FirstCallRegistration manual requests
 # Start sample:
 #   dotnet run --project samples/FirstCallRegistration -- interactive
-# Get token in REPL, then:
-#   token
-#   export AGENT_JWT='<jwt>'
+# Get token and signing key in REPL:
+#   token          → export AGENT_JWT='<paste>'
+#   signing-key    → export SIGNING_KEY='<paste>'
 
 @resourceBase = https://localhost:3012
 @apBase = https://localhost:3011
@@ -23,7 +23,7 @@ GET {{resourceBase}}/.well-known/aauth-resource.json
 #   - Body contains resource metadata (identifier, supported capabilities)
 
 ### Step 1: Signed call without access token (expected 202 + AAuth-Requirement interaction)
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/data"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/api/data"
 @step1SigKey = REPLACE_SIGNATURE_KEY
 @step1SigInput = REPLACE_SIGNATURE_INPUT
 @step1Sig = REPLACE_SIGNATURE
@@ -57,7 +57,7 @@ Content-Type: application/json
 # ⚠️ RE-SIGN REQUIRED: Generate fresh signature headers for this polling request.
 # The headers from step 1 have likely expired (>60s).
 @pendingId = REPLACE_PENDING_ID
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/pending/{{pendingId}}"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/pending/{{pendingId}}"
 @pollSigKey = REPLACE_SIGNATURE_KEY
 @pollSigInput = REPLACE_SIGNATURE_INPUT
 @pollSig = REPLACE_SIGNATURE
@@ -89,7 +89,7 @@ Signature: {{pollSig}}
 ### Step 5: Signed call with AAuth-Access token (expected 200)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh signature headers that cover the authorization component.
 @accessToken = REPLACE_AAUTH_ACCESS_TOKEN
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/data" --component authorization --header "authorization:AAuth {{accessToken}}"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/api/data" --component authorization --header "authorization:AAuth {{accessToken}}"
 @authSigKey = REPLACE_SIGNATURE_KEY
 @authSigInput = REPLACE_SIGNATURE_INPUT
 @authSig = REPLACE_SIGNATURE
