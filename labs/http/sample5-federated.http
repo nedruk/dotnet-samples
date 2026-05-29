@@ -72,9 +72,10 @@ Signature: {{psTokenSig}}
 #   - This proves: the PS acts as a proxy, the AS is the actual token issuer
 
 ### Step 3: Access R1 data with auth token (expected 200)
-# ⚠️ RE-SIGN REQUIRED: Generate fresh headers using the auth token.
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers.
+# The auth token's cnf.jwk has only the PUBLIC key — use --key-jwt with the agent token for signing.
 @r1AuthToken = REPLACE_R1_AUTH_TOKEN
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --method GET --url "https://localhost:3012/api/data"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --key-jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/data"
 @r1AccessSigKey = REPLACE_SIGNATURE_KEY
 @r1AccessSigInput = REPLACE_SIGNATURE_INPUT
 @r1AccessSig = REPLACE_SIGNATURE
@@ -89,8 +90,9 @@ Signature: {{r1AccessSig}}
 #   - Signature-Key contains the AS-issued auth token
 
 ### Step 4: Call chaining through R1 /api/enriched (R1 authorizes R2 behind the scenes)
-# ⚠️ RE-SIGN REQUIRED: Generate fresh headers using the auth token.
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --method GET --url "https://localhost:3012/api/enriched"
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers.
+# Use --key-jwt with the agent token for signing (auth token has public key only).
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{r1AuthToken}}" --key-jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/enriched"
 @enrichedSigKey = REPLACE_SIGNATURE_KEY
 @enrichedSigInput = REPLACE_SIGNATURE_INPUT
 @enrichedSig = REPLACE_SIGNATURE

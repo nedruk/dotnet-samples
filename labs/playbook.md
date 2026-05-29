@@ -228,6 +228,19 @@ dotnet run --project labs/scripts/AAuth.SignTool -- \
   --header "authorization:AAuth <access-token>"
 ```
 
+If signing with an **auth token** (Samples 3–5, access steps):  
+The auth token's `cnf.jwk` only has the public key — the PS/AS doesn't know your private key.  
+Use `--key-jwt` to supply the agent token (which has the private key) for signing:
+```bash
+export AUTH_TOKEN='<paste auth token from exchange step>'
+dotnet run --project labs/scripts/AAuth.SignTool -- \
+  --jwt "$AUTH_TOKEN" \
+  --key-jwt "$AGENT_JWT" \
+  --method GET \
+  --url "https://localhost:3012/api/documents"
+```
+`--jwt` sets the `Signature-Key` header value (auth token), `--key-jwt` provides the private key for the actual signature.
+
 If request includes `AAuth-Mission` and you need it signed:
 ```bash
 dotnet run --project labs/scripts/AAuth.SignTool -- \

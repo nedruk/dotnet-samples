@@ -24,7 +24,8 @@ try
         }
     }
 
-    using var signingKey = CreateSigningKeyFromJwt(options.Jwt);
+    var keySourceJwt = options.KeyJwt ?? options.Jwt;
+    using var signingKey = CreateSigningKeyFromJwt(keySourceJwt);
     HttpMessageSigner.Sign(
         request,
         signingKey,
@@ -112,6 +113,7 @@ static AsymmetricAlgorithm CreateEd25519SigningKey(JsonWebKey jwk)
 sealed class CliOptions
 {
     public required string Jwt { get; init; }
+    public string? KeyJwt { get; init; }
     public required string Method { get; init; }
     public required string Url { get; init; }
     public required IReadOnlyList<string> Components { get; init; }
@@ -121,6 +123,7 @@ sealed class CliOptions
     public static CliOptions Parse(string[] args)
     {
         var jwt = string.Empty;
+        string? keyJwt = null;
         var method = string.Empty;
         var url = string.Empty;
         var showHelp = args.Length == 0;
@@ -138,6 +141,9 @@ sealed class CliOptions
                     break;
                 case "--jwt":
                     jwt = ReadValue(args, ref i, "--jwt");
+                    break;
+                case "--key-jwt":
+                    keyJwt = ReadValue(args, ref i, "--key-jwt");
                     break;
                 case "--method":
                     method = ReadValue(args, ref i, "--method").ToUpperInvariant();
@@ -187,6 +193,7 @@ sealed class CliOptions
         return new CliOptions
         {
             Jwt = jwt,
+            KeyJwt = keyJwt,
             Method = method,
             Url = url,
             Components = components,
@@ -203,6 +210,9 @@ sealed class CliOptions
         Console.WriteLine("  dotnet run --project labs/scripts/AAuth.SignTool -- --jwt <JWT> --method <METHOD> --url <URL> [options]");
         Console.WriteLine();
         Console.WriteLine("Options:");
+        Console.WriteLine("  --key-jwt <JWT>      JWT containing the private signing key (cnf.jwk.d).");
+        Console.WriteLine("                       Use when --jwt holds a token whose cnf.jwk has no private key");
+        Console.WriteLine("                       (e.g. auth tokens issued by a Person Server).");
         Console.WriteLine("  --component <name>   Additional covered component (repeatable), e.g. authorization");
         Console.WriteLine("  --header <name:val>  Header value used for signing of additional components (repeatable)");
         Console.WriteLine("  -h, --help           Show this help");

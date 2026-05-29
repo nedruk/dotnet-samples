@@ -97,9 +97,10 @@ Signature: {{tokenSig}}
 #   - The mission hash (s256) is preserved through the entire chain
 
 ### Step 5: Access resource using auth token (expected 200)
-# ⚠️ RE-SIGN REQUIRED: Generate fresh headers using the auth token (not agent token).
+# ⚠️ RE-SIGN REQUIRED: Generate fresh headers.
+# The auth token's cnf.jwk has only the PUBLIC key — use --key-jwt with the agent token for signing.
 @authToken = REPLACE_AUTH_TOKEN_JWT
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{authToken}}" --method GET --url "https://localhost:3012/api/data"
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{authToken}}" --key-jwt "$AGENT_JWT" --method GET --url "https://localhost:3012/api/data"
 @accessSigKey = REPLACE_SIGNATURE_KEY
 @accessSigInput = REPLACE_SIGNATURE_INPUT
 @accessSig = REPLACE_SIGNATURE
