@@ -66,7 +66,7 @@ labs/
 dotnet run --project samples/HelloAAuth -- interactive
 ```
 Commands to run:
-- `valid` (or press Enter): expected `200` — agent is on the allowlist
+- `valid`: expected `200` — agent is on the allowlist
 - `unknown`: expected `401` — self-issued token with unknown issuer (JWKS unreachable)
 - `unsigned`: expected `401` — no signature headers at all
 - `token`, `keys` for inspection
