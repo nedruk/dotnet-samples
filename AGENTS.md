@@ -60,7 +60,7 @@ git submodule update --init docs/aauth-spec
 
 - Targets .NET 10 (`net10.0`).
 - Uses `Microsoft.IdentityModel.JsonWebTokens` for all JWT/JWK operations.
-- ECDSA P-256 only for signatures (Ed25519 support blocked by .NET runtime; structurally ready to add).
+- HTTP Message Signatures support Ed25519 (EdDSA) and ECDSA P-256 (ES256 compatibility).
 - HTTP Message Signatures scoped to the AAuth profile of RFC 9421 (not a full implementation).
 - Agent-side uses `DelegatingHandler` pipeline pattern; server-side uses ASP.NET Core `AuthenticationHandler`.
 - JWKS discovery implements rate-limited caching (1 min between fetches, 24 hr max TTL).
@@ -119,8 +119,6 @@ When writing new tests, follow the existing pattern: create a private inner mock
 ## TypeScript ↔ .NET Package Mapping
 
 This .NET repo ports functionality from the TypeScript monorepo at [`aauth-dev/packages-js`](https://github.com/AAuth-dev/packages-js).
-
-If the `AAUTH_TS_SAMPLES` environment variable is set on the host, the TypeScript AAuth samples repo is bind-mounted into the dev container at `/workspaces/aauth-samples`. Use this for cross-referencing the TS implementation when porting or comparing behavior.
 
 | TypeScript Package | .NET Package | Notes |
 |---|---|---|

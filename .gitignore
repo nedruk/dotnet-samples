@@ -481,3 +481,7 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 .tmux
+.zone/
+.references/
+
+plans/

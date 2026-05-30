@@ -116,8 +116,8 @@ Signature: {{tokenSig}}
 # The auth token's cnf.jwk has only the PUBLIC key — you need the private key separately.
 # Use `signing-key` command in the sample REPL to get the private key JWK, then:
 @authToken = REPLACE_AUTH_TOKEN_JWT
-# SIGNING_KEY=$(dotnet run --project samples/MissionControl -- <<< "signing-key" 2>/dev/null | grep '{')
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "{{authToken}}" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/api/data"
+# export authToken={{authToken}}
+# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$authToken" --signing-key "$SIGNING_KEY" --method GET --url "https://localhost:3012/api/data"
 @accessSigKey = REPLACE_SIGNATURE_KEY
 @accessSigInput = REPLACE_SIGNATURE_INPUT
 @accessSig = REPLACE_SIGNATURE

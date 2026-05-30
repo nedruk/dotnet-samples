@@ -78,6 +78,24 @@ The handler:
 - Binds confirmation keys (`cnf.jwk`) to the signature key used in the request.
 - Populates `ClaimsPrincipal` with agent identity, scope, and tenant claims.
 
+## Samples
+
+Working examples demonstrating AAuth flows end-to-end. See the [samples README](samples/) for details.
+
+| # | Sample | What it demonstrates |
+|---|--------|---------------------|
+| 1 | [Hello AAuth](samples/HelloAAuth/) | Identity-based access — agent signs requests, resource checks allowlist |
+| 2 | [First-Call Registration](samples/FirstCallRegistration/) | Two-party resource-managed access — browser consent, polling, access tokens |
+| 3 | [PS-Asserted Access](samples/PSAssertedAccess/) | Three-party flow — resource tokens, auth tokens, Person Server identity assertion |
+| 4 | [Mission Control](samples/MissionControl/) | Mission lifecycle, governance endpoints (permission, audit, interaction), web dashboard |
+
+```bash
+cd samples/HelloAAuth && dotnet run              # automated demo
+cd samples/FirstCallRegistration && dotnet run    # automated demo
+cd samples/PSAssertedAccess && dotnet run         # automated demo
+cd samples/MissionControl && dotnet run           # automated demo
+```
+
 ## Project Structure
 
 ```
@@ -90,13 +108,16 @@ src/
     Tokens/             JWT token types (AgentToken, ResourceToken, AuthToken, Mission)
   AAuth.Agent/          Agent-side HttpClient handler
   AAuth.Server/         Server-side ASP.NET Core authentication
+samples/
+  HelloAAuth/           Sample 1: Identity-based access
+  FirstCallRegistration/ Sample 2: Two-party resource-managed access
+  PSAssertedAccess/     Sample 3: Three-party PS-asserted access
+  MissionControl/       Sample 4: Mission lifecycle and governance dashboard
 tests/
   AAuth.Core.Tests/     Unit tests for core primitives
   AAuth.Agent.Tests/    Agent handler tests
   AAuth.Server.Tests/   Server handler tests
   AAuth.Integration.Tests/  End-to-end tests
-docs/
-  aauth-dotnet-plan.md  Implementation plan and design decisions
 ```
 
 ## Protocol Support
@@ -105,7 +126,7 @@ This implementation covers:
 
 - **Access modes**: identity-based, two-party, three-party (four-party is structurally supported)
 - **Token types**: `aa-agent+jwt`, `aa-resource+jwt`, `aa-auth+jwt`
-- **Signatures**: ECDSA P-256 with RFC 9421 HTTP Message Signatures (Ed25519 ready when .NET adds runtime support)
+- **Signatures**: RFC 9421 HTTP Message Signatures with Ed25519 (EdDSA) and ECDSA P-256 (ES256 compatibility)
 - **Headers**: `AAuth-Requirement`, `AAuth-Access`, `AAuth-Capabilities`, `AAuth-Mission`
 - **Discovery**: `{iss}/.well-known/{dwk}` metadata fetch with rate-limited JWKS caching
 - **Deferred responses**: 202 polling with `Prefer: wait=`, retry-after, clarification, and interaction callbacks
