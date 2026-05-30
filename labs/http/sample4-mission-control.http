@@ -60,9 +60,13 @@ GET {{psBase}}/pending/mission/{{missionPendingId}}
 
 ### Step 4: Authorize with mission header (signed component includes aauth-mission)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers that cover the aauth-mission component.
-# Paste the AAuth-Mission header value from step 3's response (e.g., approver="https://..."; s256="...")
+#
+# First, export the mission header value from step 3 (use single quotes — value contains double quotes):
+#   export MISSION='approver="https://localhost:3013"; s256="hsXF9..."'
+#
+# Then sign:
+#   dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3012/authorize" --component aauth-mission --header "aauth-mission:$MISSION"
 @missionHeader = REPLACE_AAUTH_MISSION_HEADER_VALUE
-# dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3012/authorize" --component aauth-mission --header "aauth-mission:{{missionHeader}}"
 @authzSigKey = REPLACE_SIGNATURE_KEY
 @authzSigInput = REPLACE_SIGNATURE_INPUT
 @authzSig = REPLACE_SIGNATURE
