@@ -473,6 +473,9 @@ async Task RunInteractive()
 
                 case "token":
                     Console.WriteLine($"  Agent token: {agentTokenJwt}");
+                    Console.WriteLine();
+                    Console.WriteLine("  Copy-paste for shell:");
+                    Console.WriteLine($"  export AGENT_JWT='{agentTokenJwt}'");
                     break;
 
                 case "keys":
@@ -486,7 +489,11 @@ async Task RunInteractive()
                     break;
 
                 case "signing-key":
-                    Console.WriteLine(SerializePrivateJwk(agentEphemeralKey));
+                    var jwk = SerializePrivateJwk(agentEphemeralKey);
+                    Console.WriteLine(jwk);
+                    Console.WriteLine();
+                    Console.WriteLine("  Copy-paste for shell:");
+                    Console.WriteLine($"  export SIGNING_KEY='{jwk}'");
                     break;
 
                 default:

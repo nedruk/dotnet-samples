@@ -213,12 +213,19 @@ async Task RunInteractive(HttpClient client, KeyMaterial km)
         {
             Console.WriteLine(agentToken);
             Console.WriteLine();
+            Console.WriteLine("  Copy-paste for shell:");
+            Console.WriteLine($"  export AGENT_JWT='{agentToken}'");
+            Console.WriteLine();
             continue;
         }
 
         if (cmd == "signing-key")
         {
-            Console.WriteLine(SerializePrivateJwk(ephemeralKey));
+            var jwk = SerializePrivateJwk(ephemeralKey);
+            Console.WriteLine(jwk);
+            Console.WriteLine();
+            Console.WriteLine("  Copy-paste for shell:");
+            Console.WriteLine($"  export SIGNING_KEY='{jwk}'");
             Console.WriteLine();
             continue;
         }

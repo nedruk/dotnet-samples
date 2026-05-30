@@ -172,6 +172,9 @@ public class Program
             {
                 Console.WriteLine(agentToken);
                 Console.WriteLine();
+                Console.WriteLine("  Copy-paste for shell:");
+                Console.WriteLine($"  export AGENT_JWT='{agentToken}'");
+                Console.WriteLine();
                 continue;
             }
 
@@ -188,7 +191,11 @@ public class Program
 
             if (input == "signing-key")
             {
-                Console.WriteLine(SerializePrivateJwk(ephemeralKey));
+                var jwk = SerializePrivateJwk(ephemeralKey);
+                Console.WriteLine(jwk);
+                Console.WriteLine();
+                Console.WriteLine("  Copy-paste for shell:");
+                Console.WriteLine($"  export SIGNING_KEY='{jwk}'");
                 Console.WriteLine();
                 continue;
             }

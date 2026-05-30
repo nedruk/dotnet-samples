@@ -356,6 +356,9 @@ async Task RunInteractive()
         {
             Console.WriteLine(agentTokenJwt);
             Console.WriteLine();
+            Console.WriteLine("  Copy-paste for shell:");
+            Console.WriteLine($"  export AGENT_JWT='{agentTokenJwt}'");
+            Console.WriteLine();
             continue;
         }
 
@@ -371,7 +374,11 @@ async Task RunInteractive()
 
         if (cmd == "signing-key")
         {
-            Console.WriteLine(SerializePrivateJwk(ephemeralKey));
+            var jwk = SerializePrivateJwk(ephemeralKey);
+            Console.WriteLine(jwk);
+            Console.WriteLine();
+            Console.WriteLine("  Copy-paste for shell:");
+            Console.WriteLine($"  export SIGNING_KEY='{jwk}'");
             Console.WriteLine();
             continue;
         }
