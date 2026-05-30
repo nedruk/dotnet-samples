@@ -37,7 +37,8 @@ Signature: {{missionSig}}
 
 # VERIFY:
 #   - 200 OK (auto-approved) or 202 Accepted (pending dashboard approval)
-#   - If 200: "AAuth-Mission" header present with approver=... and s256=...
+#   - If 200: "AAuth-Mission" RESPONSE HEADER present with approver=... and s256=...
+#     → Copy the full AAuth-Mission header value for step 3's @missionHeader
 #   - If 202: "Location" header with polling URL — approve via dashboard then poll
 #   - The s256 is a SHA-256 hash of the mission body, binding the mission to its content
 
@@ -50,6 +51,7 @@ GET {{psBase}}/pending/mission/{{missionPendingId}}
 
 ### Step 3: Authorize with mission header (signed component includes aauth-mission)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers that cover the aauth-mission component.
+# Paste the AAuth-Mission header value from step 1's response (e.g., approver="https://..."; s256="...")
 @missionHeader = REPLACE_AAUTH_MISSION_HEADER_VALUE
 # dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3012/authorize" --component aauth-mission --header "aauth-mission:{{missionHeader}}"
 @authzSigKey = REPLACE_SIGNATURE_KEY
