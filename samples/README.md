@@ -44,4 +44,4 @@ See each sample's README for architecture diagrams, running instructions, and ke
 
 ## Note on Key Algorithm
 
-These samples use **ECDSA P-256 (ES256)** instead of **Ed25519 (EdDSA)** used in the [TypeScript samples](https://github.com/aauth-dev/aauth-samples). This is because `Microsoft.IdentityModel.JsonWebTokens` does not yet support Ed25519/EdDSA for JWT signing and verification. The implementation is structurally ready to switch when support lands.
+These samples use **ECDSA P-256 (ES256)** for key generation. The core library also supports **Ed25519 (EdDSA)**.

@@ -3,13 +3,6 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "features": {
-    "ghcr.io/devcontainers/features/copilot-cli": {}
-  },
-  "initializeCommand": "mkdir -p /tmp/aauth-empty-mount",
-  "mounts": [
-    "source=${localEnv:AAUTH_TS_SAMPLES:/tmp/aauth-empty-mount},target=/workspaces/aauth-samples,type=bind,consistency=cached"
-  ],
   "customizations": {
     "vscode": {
       "extensions": [
