@@ -88,12 +88,36 @@ Working examples demonstrating AAuth flows end-to-end. See the [samples README](
 | 2 | [First-Call Registration](samples/FirstCallRegistration/) | Two-party resource-managed access — browser consent, polling, access tokens |
 | 3 | [PS-Asserted Access](samples/PSAssertedAccess/) | Three-party flow — resource tokens, auth tokens, Person Server identity assertion |
 | 4 | [Mission Control](samples/MissionControl/) | Mission lifecycle, governance endpoints (permission, audit, interaction), web dashboard |
+| 5 | [Federated Access](samples/FederatedAccess/) | Four-party flow with PS→AS federation, call chaining, nested delegation |
 
 ```bash
 cd samples/HelloAAuth && dotnet run              # automated demo
 cd samples/FirstCallRegistration && dotnet run    # automated demo
 cd samples/PSAssertedAccess && dotnet run         # automated demo
 cd samples/MissionControl && dotnet run           # automated demo
+cd samples/FederatedAccess && dotnet run          # automated demo
+```
+
+## Labs
+
+Hands-on exercises for validating the implementation step by step. Labs offer two modes:
+
+- **Mode A (semi-automated):** run each sample in `--interactive` mode and use built-in REPL commands (`token`, `signing-key`, `keys`, `valid`).
+- **Mode B (fully manual):** use `.http` request files with the [AAuth.SignTool](labs/scripts/AAuth.SignTool/) helper to craft and sign requests by hand.
+
+See the [labs playbook](labs/playbook.md) for full instructions.
+
+```
+labs/
+  playbook.md                     Step-by-step lab guide
+  http/                           .http files for manual Mode B testing
+    sample1-hello.http
+    sample2-first-call.http
+    sample3-ps-asserted.http
+    sample4-mission-control.http
+    sample5-federated.http
+  scripts/
+    AAuth.SignTool/               .NET signing helper (uses AAuth.Core)
 ```
 
 ## Project Structure
@@ -113,6 +137,11 @@ samples/
   FirstCallRegistration/ Sample 2: Two-party resource-managed access
   PSAssertedAccess/     Sample 3: Three-party PS-asserted access
   MissionControl/       Sample 4: Mission lifecycle and governance dashboard
+  FederatedAccess/      Sample 5: Four-party federated access
+labs/
+  playbook.md           Step-by-step lab guide
+  http/                 .http files for manual testing
+  scripts/              AAuth.SignTool signing helper
 tests/
   AAuth.Core.Tests/     Unit tests for core primitives
   AAuth.Agent.Tests/    Agent handler tests
