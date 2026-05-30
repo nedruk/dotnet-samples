@@ -36,22 +36,31 @@ Signature: {{missionSig}}
 }
 
 # VERIFY:
-#   - 200 OK (auto-approved) or 202 Accepted (pending dashboard approval)
-#   - If 200: "AAuth-Mission" RESPONSE HEADER present with approver=... and s256=...
-#     → Copy the full AAuth-Mission header value for step 3's @missionHeader
-#   - If 202: "Location" header with polling URL — approve via dashboard then poll
-#   - The s256 is a SHA-256 hash of the mission body, binding the mission to its content
+#   - You will get 202 Accepted (mission pending dashboard approval)
+#   - Response body: {"id":"<mission-id>","status":"pending"}
+#   - "Location" header: https://localhost:3013/pending/mission/<mission-id>
+#   - Save the mission ID for step 2
 
-### Step 2: Poll mission if pending (optional)
+### Step 2: Approve mission via dashboard
+# 1) Open the Person Server dashboard in your browser:
+#      https://localhost:3013/dashboard
+# 2) Find the pending mission and click "Approve"
+# 3) Once approved, poll the pending URL below to get the AAuth-Mission header
+
+### Step 3: Poll approved mission (get AAuth-Mission header)
+# Set @missionPendingId to the mission ID from step 1's response body
 @missionPendingId = REPLACE_PENDING_MISSION_ID
 GET {{psBase}}/pending/mission/{{missionPendingId}}
 
 # VERIFY:
-#   - 202 while pending, 200 once approved (with AAuth-Mission header)
+#   - Before approval: 202 Accepted (still pending)
+#   - After approval: 200 OK with "AAuth-Mission" RESPONSE HEADER
+#     Example: AAuth-Mission: approver="https://localhost:3013"; s256="vb5JK..."
+#     → Copy the full AAuth-Mission header value for step 4's @missionHeader
 
-### Step 3: Authorize with mission header (signed component includes aauth-mission)
+### Step 4: Authorize with mission header (signed component includes aauth-mission)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers that cover the aauth-mission component.
-# Paste the AAuth-Mission header value from step 1's response (e.g., approver="https://..."; s256="...")
+# Paste the AAuth-Mission header value from step 3's response (e.g., approver="https://..."; s256="...")
 @missionHeader = REPLACE_AAUTH_MISSION_HEADER_VALUE
 # dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3012/authorize" --component aauth-mission --header "aauth-mission:{{missionHeader}}"
 @authzSigKey = REPLACE_SIGNATURE_KEY
@@ -75,7 +84,7 @@ Signature: {{authzSig}}
 #   - Decode resource_token: it should contain mission context (approver, s256)
 #   - This proves: mission context is signed and flows through the token chain
 
-### Step 4: Exchange at PS /token (signed with agent token)
+### Step 5: Exchange at PS /token (signed with agent token)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers for the PS token endpoint.
 @resourceToken = REPLACE_RESOURCE_TOKEN_JWT
 # dotnet run --project labs/scripts/AAuth.SignTool -- --jwt "$AGENT_JWT" --signing-key "$SIGNING_KEY" --method POST --url "https://localhost:3013/token"
@@ -98,7 +107,7 @@ Signature: {{tokenSig}}
 #   - Decode auth_token: should contain mission context from the resource_token
 #   - The mission hash (s256) is preserved through the entire chain
 
-### Step 5: Access resource using auth token (expected 200)
+### Step 6: Access resource using auth token (expected 200)
 # ⚠️ RE-SIGN REQUIRED: Generate fresh headers.
 # The auth token's cnf.jwk has only the PUBLIC key — you need the private key separately.
 # Use `signing-key` command in the sample REPL to get the private key JWK, then:
